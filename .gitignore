@@ -1,0 +1,9 @@
+
+#ignore raw processed data folder  
+
+Pre_Event_Grids_In_TIFF/
+Post_Event_Grids_In_TIFF/
+
+
+#ignore tif images
+*.tif
