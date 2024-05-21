@@ -1,9 +1,17 @@
 
 #ignore raw processed data folder  
 
+
 Pre_Event_Grids_In_TIFF/
 Post_Event_Grids_In_TIFF/
 
+Post_Event_Grids_In_jpeg/
+Pre_Event_Grids_In_jpeg/
+Pre_Event_Grids_In_TIFF_mask/
+Post_Event_Grids_In_TIFF/
+Post_Event_Grids_mask_jpeg/
+Pre_Event_Grids_In_TIFF/
+Pre_Event_Grids_mask_jpeg/
 
 #ignore tif images
 *.tif
