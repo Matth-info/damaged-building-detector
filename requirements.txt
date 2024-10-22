@@ -1,0 +1,13 @@
+numpy
+torch
+matplotlib
+folium
+rasterio
+fastparquet
+arrow
+seaborn
+tensorboardX
+scikit-learn
+spacy
+collection
+torchsummary
