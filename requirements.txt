@@ -11,3 +11,8 @@ scikit-learn
 spacy
 collection
 torchsummary
+pandas 
+geopandas
+torchsummary
+kaggle
+albumentations
