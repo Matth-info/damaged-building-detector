@@ -1,0 +1,18 @@
+# configs/config.yaml
+data:
+  data_dir: "data/raw"
+  processed_dir: "data/processed"
+  batch_size: 32
+  num_workers: 4
+
+model:
+  name: "resnet50"
+  num_classes: 10
+
+training:
+  epochs: 10
+  learning_rate: 0.001
+  save_dir: "models/"
+
+logging:
+  log_dir: "outputs/logs"
