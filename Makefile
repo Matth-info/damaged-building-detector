@@ -17,6 +17,6 @@ test:
 build:
     docker build -t my_ml_project .
 
-# Run the Docker container
+# Run the Docker container 
 run:
     docker run -p 5000:5000 my_ml_project

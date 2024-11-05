@@ -44,7 +44,7 @@ pip install -r requirements.txt
 ```
 
 ### Build Docker Image
-
+ 
 To build the Docker image for deployment, use the following command:
 
 ```bash
