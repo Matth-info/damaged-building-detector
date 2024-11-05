@@ -15,4 +15,4 @@ COPY . .
 EXPOSE 5000
 
 # Default command to run the application
-CMD ["python", "src/inference/predict.py"]
+CMD ["python", "src/inference/predict.py"] 
