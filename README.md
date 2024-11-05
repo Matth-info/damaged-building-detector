@@ -48,7 +48,7 @@ pip install -r requirements.txt
 To build the Docker image for deployment, use the following command:
 
 ```bash
-docker build -t damaged-building-detector .
+docker build -t damaged-building-detector . 
 ```
 
 ## Running the Project
