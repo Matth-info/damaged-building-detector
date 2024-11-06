@@ -33,8 +33,6 @@ This project is designed to facilitate learning and experimentation in:
 - **Docker**
 - Additional dependencies listed in `requirements.txt`
 
-
-```markdown
 ## Installation
 
 To install the required dependencies, run:
