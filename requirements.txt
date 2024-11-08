@@ -1,6 +1,7 @@
 numpy
 torch
 transformers
+accelerate
 matplotlib
 folium
 rasterio

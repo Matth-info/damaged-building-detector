@@ -59,3 +59,21 @@ class UNet(nn.Module):
         out = self.conv_last(x)
         
         return out
+
+    @torch.no_grad()
+    def predict(self, x):
+        """Inference method. Switch model to `eval` mode, call `.forward(x)` with `torch.no_grad()`
+
+        Args:
+            x: 4D torch tensor with shape (batch_size, channels, height, width)
+
+        Return:
+            prediction: 4D torch tensor with shape (batch_size, classes, height, width)
+
+        """
+        if self.training:
+            self.eval()
+
+        outputs = self.forward(x)
+
+        return outputs

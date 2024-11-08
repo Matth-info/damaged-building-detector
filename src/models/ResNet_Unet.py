@@ -65,3 +65,12 @@ class ResNet_UNET(nn.Module):
             for l in self.base_layers:
                 for param in l.parameters():
                     param.requires_grad = False
+
+    @torch.no_grad()
+    def predict(self, x):
+        """ Inference method """
+        if self.training:
+            self.eval()
+        outputs = self.forward(x)
+
+        return outputs
