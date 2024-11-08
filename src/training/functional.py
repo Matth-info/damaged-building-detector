@@ -15,7 +15,7 @@ from torch.nn.modules.loss import _Loss
 from datetime import datetime 
 import os 
 from typing import List, Callable, Dict, Optional
-from .utils import log_metrics
+from .utils import log_metrics, log_images_to_tensorboard
 import time
 
 
@@ -99,10 +99,12 @@ def train(
     else:
         lr_scheduler = scheduler(optimizer=optimizer_ft,**params_sc)
 
-
+    # initialize some variables
     best_vloss = float('inf')
     overall_start_time  = time.time()
     patience, trigger_times = early_stopping_params["patience"], early_stopping_params["trigger_times"]
+    max_images = 4
+    log_interval = 2
     
     # Initialize TensorBoard writer
     with SummaryWriter(log_dir) as writer:
@@ -121,10 +123,22 @@ def train(
 
             # log validation metrics
             log_metrics(writer, metrics=epoch_metrics, epoch_number=epoch, phase="validation")
+
+            # log some sample images
+            # After validation epoch
+            if epoch % log_interval == 0:
+                log_images_to_tensorboard(
+                    model=model,
+                    data_loader=valid_dl,
+                    writer=writer,
+                    epoch=epoch,
+                    device=device,
+                    max_images=max_images
+                )
             
             epoch_time = time.time() - start_time
             print(f"Epoch {epoch+1} took {epoch_time:.2f} seconds")
-            
+
             if torch.cuda.is_available():
                 print(f"GPU memory allocated: {torch.cuda.memory_allocated() / 1024**3:.2f} GB")
             
