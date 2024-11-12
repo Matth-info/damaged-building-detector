@@ -166,7 +166,6 @@ class OpenCities_Building_Dataset(Dataset):
     def __init__(self,
                  images_dir: str,
                  masks_dir: str,
-                 ids: Optional[List[str]] = None,
                  transform: Optional[A.Compose] = None):
         """
         Initializes the OpenCities dataset with images and corresponding masks.
@@ -174,14 +173,19 @@ class OpenCities_Building_Dataset(Dataset):
         Args:
             images_dir (str): Directory containing the image files.
             masks_dir (str): Directory containing the mask files.
-            ids (Optional[List[str]]): List of image filenames (without extension).
             transform (Optional[A.Compose]): Albumentations transformation pipeline.
+        
+        Checklist:
+            dataset creation : Done
+            dataset iteration : Done
+            data augmentation with albumentation : Done
+            display data : Done
         """
         self.images_dir = Path(images_dir)
         self.masks_dir = Path(masks_dir)
         self.transform = transform
         self.filenames = [Path(x) for x in self.images_dir.glob("*.tif")]  
-
+        self.nb_input_channel = 3
     def __len__(self):
         """Returns the total number of samples in the dataset."""
         return len(self.filenames)
@@ -205,23 +209,26 @@ class OpenCities_Building_Dataset(Dataset):
 
         # Apply transformations if specified
         if self.transform is not None:
-            sample = self.transform(**sample)
-
-        return sample
+            # Albumentation expect (H, W, C) images 
+            transformed = self.transform(image=sample["image"].transpose(1,2,0), 
+                                         mask=sample["mask"]
+                            )
+            sample = transformed
+        return sample # {"image" : ..., "mask" : ...}
 
     def read_image(self, path: Path):
         """Reads and returns the image from a given path."""
         with rasterio.open(path) as f:
             image = f.read()  # Read the image as a multi-band array
-        image = image.transpose(1, 2, 0)  # Convert from (C, H, W) to (H, W, C)
+        image = image[:self.nb_input_channel] # (C, H, W) 
         return image
 
     def read_mask(self, path: Path):
         """Reads and returns the mask from a given path."""
         with rasterio.open(path) as f:
             mask = f.read(1)  # Read only the first band (grayscale mask)
-        return mask
-
+        return np.where(mask == 255, 1, 0) # binary mask 0 : no building and 1 : building
+      
     def read_image_profile(self, id: str):
         """Reads the image profile (metadata) for a given image."""
         path = self.images_dir / id
@@ -241,9 +248,21 @@ class OpenCities_Building_Dataset(Dataset):
             ax = [ax]
 
         for i, idx in enumerate(list_indices):
-            sample = self.__getitem__(idx)
+            sample = self.__getitem__(idx) 
             image = sample['image']
-            mask = sample['mask']
+            # Convert from (C, H, W) to (H, W, C) for compatibility reasons
+
+
+            # Check if the image is a torch tensor
+            if isinstance(image, torch.Tensor):
+                # Convert (C, H, W) to (H, W, C) for PyTorch tensor
+                image = image.permute(1, 2, 0).numpy()  # Convert to NumPy array
+            elif isinstance(image, np.ndarray):
+                # If it's already a numpy array, no need to permute
+                if image.ndim == 3 and image.shape[0] == 3:  # (C, H, W)
+                    image = image.transpose(1, 2, 0)  # Convert from (C, H, W) to (H, W, C)
+
+            mask = np.where(sample['mask'] == 1, 255, 0) # For compatibility and readibility 
 
             # Display the image and the corresponding mask
             ax[i][0].imshow(image)

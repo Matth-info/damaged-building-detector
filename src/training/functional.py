@@ -8,13 +8,13 @@ import torch.optim as optim
 from torch.utils.data import Dataset, DataLoader
 from torch.utils.tensorboard import SummaryWriter
 from torchsummary import summary
-from torch.cuda.amp import autocast, GradScaler
+from torch.amp import autocast, GradScaler
 from torch.nn.modules.loss import _Loss
 
 # utils import
 from datetime import datetime 
 import os 
-from typing import List, Callable, Dict, Optional
+from typing import List, Callable, Dict, Optional, Tuple
 from .utils import log_metrics, log_images_to_tensorboard
 import time
 
@@ -22,7 +22,8 @@ import time
 # Loss import 
 
 
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+device = "cuda" if torch.cuda.is_available() else "cpu"
+print("Training will be done on ",device)
 scaler = GradScaler()
 
 def training_epoch(model: nn.Module, train_dl: DataLoader, loss_fn: _Loss, optimizer : optim , scheduler : optim.lr_scheduler,epoch_number:int, writer:SummaryWriter):
@@ -32,12 +33,15 @@ def training_epoch(model: nn.Module, train_dl: DataLoader, loss_fn: _Loss, optim
     model.train()
     running_loss = 0.0
 
-    for step, (x,y) in enumerate(train_dl):
+    for step, batch in enumerate(train_dl):
+        x = batch["image"]
+        y = batch["mask"]
+
         x = x.to(device, non_blocking=True)
-        y = y.to(device, non_blocking=True)
+        #y = y.to(device, non_blocking=True)
         optimizer.zero_grad()
 
-        with autocast():
+        with autocast(device_type=device):
 
             outputs = model(x)
             # Compute the loss and its gradients 
@@ -95,7 +99,7 @@ def train(
         optimizer_ft = optimizer(params=filter(lambda p: p.requires_grad, model.parameters()), **params_opt)
 
     if scheduler is None:
-        lr_scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=10, gamma=0.1)
+        lr_scheduler = torch.optim.lr_scheduler.StepLR(optimizer_ft, step_size=10, gamma=0.1)
     else:
         lr_scheduler = scheduler(optimizer=optimizer_ft,**params_sc)
 
@@ -112,7 +116,11 @@ def train(
             start_time = time.time()
             epoch_loss = training_epoch(model, train_dl, loss_fn=loss_fn, optimizer=optimizer_ft, scheduler=lr_scheduler, epoch_number=epoch, writer=writer)
             
-            epoch_vloss, epoch_metrics  = validation_epoch(model, valid_dl, loss_fn, epoch_number=epoch)
+            epoch_vloss, epoch_metrics  = validation_epoch(model=model,
+                                                         valid_dl=valid_dl,
+                                                         loss_fn=loss_fn,
+                                                         metrics=metrics, 
+                                                         epoch_number=epoch)
             
             lr_scheduler.step()
             print(f"LOSS train {epoch_loss} valid {epoch_vloss}")
@@ -163,17 +171,20 @@ def validation_epoch(
     loss_fn: nn.Module,
     epoch_number: int,
     metrics: List[Callable] = [],
-) -> int, Dict[str, float]:
+) -> Tuple[int, Dict[str, float]]:
     
     running_loss = 0.0
-    metric_totals = {metric.__name__: 0.0 for metric in metrics}  # Initialize totals for each metric
+    metric_totals = {metric.__class__.__name__: 0.0 for metric in metrics}  # Initialize totals for each metric
 
     model.eval()  # Set model to evaluation mode
 
     with torch.no_grad():
-        for step, (x, y) in enumerate(valid_dl):
+        for step, batch in enumerate(valid_dl):
+            x = batch["image"]
+            y = batch["mask"]
+
             x = x.to(device, non_blocking=True)
-            y = y.to(device,non_blocking=True)
+            #y = y.to(device , non_blocking=True)
 
             # Forward pass
             outputs = model(x)
@@ -185,11 +196,11 @@ def validation_epoch(
             # Calculate each metric and accumulate the total
             for metric in metrics:
                 metric_value = metric(outputs, y)
-                metric_totals[metric.__name__] += metric_value * valid_dl.batch_size
+                metric_totals[metric.__class__.__name__] += metric_value * valid_dl.batch_size
 
     # Calculate average loss and metrics over the whole validation dataset
     epoch_vloss = running_loss / len(valid_dl.dataset)
-    epoch_metrics = {name: total / len(valid_dl.dataset) for name, total in metric_totals.items()}
+    epoch_metrics = {name: float((total / len(valid_dl.dataset)).cpu().numpy()) for name, total in metric_totals.items()}
 
     print(f'Epoch {epoch_number + 1} validation completed. Loss: {epoch_vloss:.4f}, Metrics: {epoch_metrics}')
     return epoch_vloss, epoch_metrics
