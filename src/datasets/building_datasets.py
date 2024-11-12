@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import List, Dict, Optional
 from torch.utils.data import Dataset
 import albumentations as A  # Import alias for Albumentations
+import rasterio
 
 class Puerto_Rico_Building_Dataset(Dataset):
     def __init__(self, base_dir: str, pre_disaster_dir: str, post_disaster_dir: str, mask_dir: str, 
@@ -153,6 +154,102 @@ class Puerto_Rico_Building_Dataset(Dataset):
             
             # Hide axes for cleaner display
             for j in range(3):
+                ax[i][j].axis("off")
+
+        plt.tight_layout()
+        plt.show()
+
+class OpenCities_Building_Dataset(Dataset):
+
+    def __init__(self,
+                 images_dir: str,
+                 masks_dir: str,
+                 ids: Optional[List[str]] = None,
+                 transform: Optional[A.Compose] = None):
+        """
+        Initializes the OpenCities dataset with images and corresponding masks.
+
+        Args:
+            images_dir (str): Directory containing the image files.
+            masks_dir (str): Directory containing the mask files.
+            ids (Optional[List[str]]): List of image filenames (without extension).
+            transform (Optional[A.Compose]): Albumentations transformation pipeline.
+        """
+        self.images_dir = Path(images_dir)
+        self.masks_dir = Path(masks_dir)
+        self.ids = ids if ids is not None else os.listdir(images_dir)
+        self.transform = transform
+
+    def __len__(self):
+        """Returns the total number of samples in the dataset."""
+        return len(self.ids)
+
+    def __getitem__(self, idx: int):
+        """Fetches and returns a single dataset sample with optional transformations."""
+        id = self.ids[idx]
+        image_path = self.images_dir / id
+        mask_path = self.masks_dir / id
+
+        # Load the image and the corresponding mask
+        sample = {
+            'id': id,
+            'image': self.read_image(image_path),
+            'mask': self.read_mask(mask_path),
+        }
+
+        # Apply transformations if specified
+        if self.transform is not None:
+            sample = self.transform(**sample)
+
+        # Add an extra dimension to the mask for compatibility with models
+        sample["mask"] = sample["mask"][None]  # Add channel dimension
+
+        return sample
+
+    def read_image(self, path: Path):
+        """Reads and returns the image from a given path."""
+        with rasterio.open(path) as f:
+            image = f.read()  # Read the image as a multi-band array
+        image = image.transpose(1, 2, 0)  # Convert from (C, H, W) to (H, W, C)
+        return image
+
+    def read_mask(self, path: Path):
+        """Reads and returns the mask from a given path."""
+        with rasterio.open(path) as f:
+            mask = f.read(1)  # Read only the first band (grayscale mask)
+        return mask
+
+    def read_image_profile(self, id: str):
+        """Reads the image profile (metadata) for a given image."""
+        path = self.images_dir / id
+        with rasterio.open(path) as f:
+            return f.profile
+
+    def display_data(self, list_indices: List[int]) -> None:
+        import matplotlib.pyplot as plt
+
+        num_samples = len(list_indices)
+
+        # Set up a subplot grid dynamically based on the number of samples
+        fig, ax = plt.subplots(num_samples, 3, figsize=(15, 5 * num_samples))
+
+        # Handle cases with a single sample by wrapping axes in a list
+        if num_samples == 1:
+            ax = [ax]
+
+        for i, idx in enumerate(list_indices):
+            sample = self.__getitem__(idx)
+            image = sample['image']
+            mask = sample['mask']
+
+            # Display the image and the corresponding mask
+            ax[i][0].imshow(image)
+            ax[i][0].set_title(f'Image {self.ids[idx]}')
+            ax[i][1].imshow(mask.squeeze(), cmap="gray")
+            ax[i][1].set_title(f'Mask {self.ids[idx]}')
+
+            # Hide axes for cleaner display
+            for j in range(2):
                 ax[i][j].axis("off")
 
         plt.tight_layout()
