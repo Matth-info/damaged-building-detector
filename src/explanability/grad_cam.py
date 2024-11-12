@@ -1,8 +1,7 @@
-# Grad-CAM implementation 
 import torch
 import torch.nn.functional as F
 import numpy as np
-import cv2
+import matplotlib.pyplot as plt
 
 class GradCAM:
     def __init__(self, model, target_layer):
@@ -71,7 +70,9 @@ class GradCAM:
         
         # Normalize the heatmap to range [0, 1]
         heatmap = (heatmap - heatmap.min()) / (heatmap.max() - heatmap.min() + 1e-8)
-        heatmap = cv2.resize(heatmap, (input_tensor.size(3), input_tensor.size(2)))  # Resize to match input image
+        
+        # Resize the heatmap to match input image size
+        heatmap = np.resize(heatmap, (input_tensor.size(2), input_tensor.size(3)))  # Resize to match input image
         return heatmap
     
     def __call__(self, input_tensor, target_class=None):
@@ -87,6 +88,7 @@ class GradCAM:
         """
         return self.generate_cam(input_tensor, target_class)
 
+
 # Example usage:
 # model = <Your convolutional model here>
 # grad_cam = GradCAM(model, target_layer='layer_name')
@@ -94,8 +96,46 @@ class GradCAM:
 # input_tensor = <Your input tensor here, shaped as (1, C, H, W)>
 # heatmap = grad_cam(input_tensor)
 
-# To visualize the heatmap:
-# img = input_tensor.squeeze().permute(1, 2, 0).cpu().numpy()
-# heatmap = cv2.applyColorMap(np.uint8(255 * heatmap), cv2.COLORMAP_JET)
-# superimposed_img = heatmap * 0.4 + img
-# cv2.imshow("Grad-CAM", superimposed_img)
+# To visualize the heatmap using matplotlib:
+
+def display_gradcam(input_tensor, heatmap):
+    """
+    Function to display Grad-CAM using matplotlib.
+
+    Args:
+        input_tensor (torch.Tensor): The input image tensor.
+        heatmap (np.ndarray): The generated Grad-CAM heatmap.
+    """
+    # Convert the input tensor to an image (from tensor format to numpy format)
+    img = input_tensor.squeeze().permute(1, 2, 0).cpu().numpy()
+    img -= img.min()
+    img /= img.max()  # Normalize image for better visualization
+
+    # Create a colormap for the heatmap
+    heatmap = np.uint8(255 * heatmap)  # Convert to 0-255 range
+    colormap = plt.get_cmap("jet")
+    heatmap_colored = colormap(heatmap)[:, :, :3]  # Use the jet colormap
+    
+    # Superimpose the heatmap on the original image
+    superimposed_img = heatmap_colored * 0.4 + img  # Adjust transparency by multiplying by 0.4
+    
+    # Plot the original image and the superimposed heatmap
+    plt.figure(figsize=(10, 10))
+    plt.subplot(1, 2, 1)
+    plt.imshow(img)
+    plt.title("Original Image")
+    plt.axis('off')
+
+    plt.subplot(1, 2, 2)
+    plt.imshow(superimposed_img)
+    plt.title("Grad-CAM Heatmap")
+    plt.axis('off')
+
+    plt.show()
+
+
+# Example of calling the `display_gradcam` function
+# Assuming `input_tensor` is the input image tensor and `heatmap` is generated
+# from the Grad-CAM class:
+
+# display_gradcam(input_tensor, heatmap)
