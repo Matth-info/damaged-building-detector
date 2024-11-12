@@ -9,6 +9,8 @@ from typing import List, Dict, Optional
 from torch.utils.data import Dataset
 import albumentations as A  # Import alias for Albumentations
 import rasterio
+import re 
+import glob
 
 class Puerto_Rico_Building_Dataset(Dataset):
     def __init__(self, base_dir: str, pre_disaster_dir: str, post_disaster_dir: str, mask_dir: str, 
@@ -159,8 +161,8 @@ class Puerto_Rico_Building_Dataset(Dataset):
         plt.tight_layout()
         plt.show()
 
-class OpenCities_Building_Dataset(Dataset):
 
+class OpenCities_Building_Dataset(Dataset):
     def __init__(self,
                  images_dir: str,
                  masks_dir: str,
@@ -177,22 +179,26 @@ class OpenCities_Building_Dataset(Dataset):
         """
         self.images_dir = Path(images_dir)
         self.masks_dir = Path(masks_dir)
-        self.ids = ids if ids is not None else os.listdir(images_dir)
         self.transform = transform
+        self.filenames = [Path(x) for x in self.images_dir.glob("*.tif")]  
 
     def __len__(self):
         """Returns the total number of samples in the dataset."""
-        return len(self.ids)
+        return len(self.filenames)
+
+    def extract_filename(self, filepath: Path) -> str:
+        # Split the string at '.tif' and return the part before it
+        return filepath.stem
 
     def __getitem__(self, idx: int):
         """Fetches and returns a single dataset sample with optional transformations."""
-        id = self.ids[idx]
-        image_path = self.images_dir / id
-        mask_path = self.masks_dir / id
+        image_path = self.filenames[idx]
+        filename = self.extract_filename(image_path)  # Convert Path to string before extracting filename
+        filename_mask = f"{filename}_mask.tif"
+        mask_path = os.path.join(self.masks_dir,filename_mask)
 
         # Load the image and the corresponding mask
         sample = {
-            'id': id,
             'image': self.read_image(image_path),
             'mask': self.read_mask(mask_path),
         }
@@ -200,9 +206,6 @@ class OpenCities_Building_Dataset(Dataset):
         # Apply transformations if specified
         if self.transform is not None:
             sample = self.transform(**sample)
-
-        # Add an extra dimension to the mask for compatibility with models
-        sample["mask"] = sample["mask"][None]  # Add channel dimension
 
         return sample
 
@@ -231,7 +234,7 @@ class OpenCities_Building_Dataset(Dataset):
         num_samples = len(list_indices)
 
         # Set up a subplot grid dynamically based on the number of samples
-        fig, ax = plt.subplots(num_samples, 3, figsize=(15, 5 * num_samples))
+        fig, ax = plt.subplots(num_samples, 2, figsize=(15, 5 * num_samples))
 
         # Handle cases with a single sample by wrapping axes in a list
         if num_samples == 1:
@@ -244,10 +247,11 @@ class OpenCities_Building_Dataset(Dataset):
 
             # Display the image and the corresponding mask
             ax[i][0].imshow(image)
-            ax[i][0].set_title(f'Image {self.ids[idx]}')
-            ax[i][1].imshow(mask.squeeze(), cmap="gray")
-            ax[i][1].set_title(f'Mask {self.ids[idx]}')
-
+            ax[i][0].set_title(f'Image {self.filenames[idx].name}')
+            ax[i][1].imshow(image)
+            ax[i][1].imshow(mask.squeeze(), alpha=0.5)
+            ax[i][1].set_title(f'Mask {self.filenames[idx].name}')
+           
             # Hide axes for cleaner display
             for j in range(2):
                 ax[i][j].axis("off")
