@@ -1,4 +1,3 @@
-# fmt: off
 from .functional import (
     get_stats,
     fbeta_score,

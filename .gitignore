@@ -1,8 +1,8 @@
 # Ignore all .pth files
 *.pth
+*.pyc
 
 # Allow the specific data/data_samples folder and its contents
 !data/data_samples/
 !data/data_samples/**
 
-*.pyc

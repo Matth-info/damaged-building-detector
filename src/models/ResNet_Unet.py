@@ -4,10 +4,10 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 # Vision-related imports
-from torchvision.models import resnet18, resnet34
+from torchvision.models import resnet18, resnet34, ResNet18_Weights
 
 class ResNet_UNET(nn.Module):
-    def __init__(self, in_channels=3, out_channels=2, pretrained=True, freeze_backbone=True):
+    def __init__(self, in_channels=3, out_channels=2, pretrained=ResNet18_Weights.DEFAULT, freeze_backbone=True):
         super().__init__()
         
         # Modify first layer of ResNet34 to accept custom number of channels
@@ -72,5 +72,5 @@ class ResNet_UNET(nn.Module):
         if self.training:
             self.eval()
         outputs = self.forward(x)
-
-        return outputs
+        
+        return torch.argmax(outputs, dim=1).cpu().numpy()

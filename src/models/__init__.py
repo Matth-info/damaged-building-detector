@@ -4,6 +4,5 @@ from .Unet import UNet
 
 __all__ = [
     "ResNet_UNET",
-    "Segformer",
-    "UNet"
+    "Segformer"
 ]

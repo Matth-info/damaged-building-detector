@@ -252,7 +252,6 @@ class OpenCities_Building_Dataset(Dataset):
             image = sample['image']
             # Convert from (C, H, W) to (H, W, C) for compatibility reasons
 
-
             # Check if the image is a torch tensor
             if isinstance(image, torch.Tensor):
                 # Convert (C, H, W) to (H, W, C) for PyTorch tensor
