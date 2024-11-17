@@ -71,24 +71,18 @@ class Cloud_DrivenData_Dataset(torch.utils.data.Dataset):
         filepath = self.label.loc[idx]["label_path"]
         return self.load_channel(filepath)
 
-    def open_as_array(self, idx: int, invert: bool = False) -> np.ndarray:
+    def open_as_array(self, idx: int) -> np.ndarray:
         """
         Loads the image channels for the sample at the given index and stacks them into a single array.
         
         Args:
-            idx (int): Index of the sample in the DataFrame.
-            invert (bool): If True, converts the image to channel-first format (C x H x W).
-        
+            idx (int): Index of the sample in the DataFrame.        
         Returns:
             np.ndarray: Stacked image channels as a NumPy array, normalized to [0, 1].
         """
         # Load the channels based on the band names and stack them
         band_arrs = [self.load_channel(self.data.loc[idx][f"{band}_path"]) for band in self.bands]
         x_arr = np.stack(band_arrs, axis=-1)
-
-        # Optionally transpose to channel-first format (C, H, W)
-        if invert: 
-            x_arr = x_arr.transpose((2, 0, 1))
 
         # Normalize the array (divide by max value to scale between 0 and 1)
         x_arr = (x_arr - x_arr.min()) / (x_arr.max() - x_arr.min()) 
@@ -113,12 +107,12 @@ class Cloud_DrivenData_Dataset(torch.utils.data.Dataset):
             tuple: A tuple containing the image tensor and the mask tensor (if labels exist).
         """
         # Load image channels and optional mask
-        x = self.open_as_array(idx, invert=self.pytorch).astype(np.float32)
+        x = self.open_as_array(idx).astype(np.float32) # numpy format (H,W,C)
         y = None
         if self.label is not None:
             y = self.open_mask(idx)
 
-        # Apply transformations if provided
+        # Apply transformations if provided : format (H,W,C)
         if self.transform:
             if y is not None:
                 augmented = self.transform(image=x, mask=y)
@@ -126,15 +120,16 @@ class Cloud_DrivenData_Dataset(torch.utils.data.Dataset):
             else:
                 augmented = self.transform(image=x)
                 x = augmented['image']
-
+        
         # Convert to PyTorch tensors and normalize
         if self.transform is None: # numpy to torch tensor
+            x = x.transpose((2, 0, 1))
             x = torch.tensor(x, dtype=torch.float32)
             if y is not None:
                 y = torch.tensor(y, dtype=torch.int64)
 
         # Return image and mask (or just image if no mask)
-        return (x, y) if y is not None else x
+        return {"image": x, "mask": y} if y is not None else x
 
     def __repr__(self) -> str:
         """
