@@ -6,6 +6,7 @@ from tqdm import tqdm
 from torch.utils.tensorboard import SummaryWriter
 import torch
 
+
 def tsne_with_projector(
     model,
     dataset,
@@ -31,7 +32,9 @@ def tsne_with_projector(
     :param projector_metadata_path: path to save metadata for the embedding projector
     :param device: device to use for computations ('cuda' or 'cpu')
     """
-    data_loader = DataLoader(dataset, batch_size=batch_size, shuffle=False, pin_memory=True)
+    data_loader = DataLoader(
+        dataset, batch_size=batch_size, shuffle=False, pin_memory=True
+    )
     model.eval()
 
     # Initialize TensorBoard writer
@@ -42,7 +45,9 @@ def tsne_with_projector(
     for batch in tqdm(data_loader, desc="Encoding images", leave=False):
         with torch.no_grad():
             images = batch[image_key].to(device)
-            labels.extend(batch.get("label", torch.zeros(len(images))).cpu().numpy())  # Assuming 'label' exists
+            labels.extend(
+                batch.get("label", torch.zeros(len(images))).cpu().numpy()
+            )  # Assuming 'label' exists
             encoded = model.encoder(images)
         encoded_images.extend(encoded.cpu().detach().numpy())
 
@@ -67,18 +72,21 @@ def tsne_with_projector(
     # Perform t-SNE for a local plot (optional)
     if n_components == 2:
         print("Performing t-SNE for local plot...")
-        embedded = TSNE(n_components=n_components, verbose=1).fit_transform(encoded_images)
+        embedded = TSNE(n_components=n_components, verbose=1).fit_transform(
+            encoded_images
+        )
 
         # Create a scatter plot
         plt.figure(figsize=(10, 8))
         sns.scatterplot(
-            x=embedded[:, 0], y=embedded[:, 1],
+            x=embedded[:, 0],
+            y=embedded[:, 1],
             hue=labels,
             palette=sns.color_palette("hls", len(set(labels))),
             legend="full",
         )
         plt.tight_layout()
-        plt.axis('off')
+        plt.axis("off")
 
         # Save plot as image
         if save:

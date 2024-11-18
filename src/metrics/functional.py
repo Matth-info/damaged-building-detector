@@ -33,20 +33,20 @@ from typing import Optional, List, Tuple, Union
 
 
 __all__ = [
-    "get_stats", 
+    "get_stats",
     "fbeta_score",
     "f1_score",
-    "iou_score", # Measures the overlap between predicted and ground truth regions. 
-    "accuracy", # Measures the proportion of correctly predicted pixels.
-    "precision", # Indicates the proportion of predicted positives that are actual positives.
-    "recall", # Indicates the proportion of actual positives that are correctly predicted.
+    "iou_score",  # Measures the overlap between predicted and ground truth regions.
+    "accuracy",  # Measures the proportion of correctly predicted pixels.
+    "precision",  # Indicates the proportion of predicted positives that are actual positives.
+    "recall",  # Indicates the proportion of actual positives that are correctly predicted.
     "sensitivity",
-    "specificity", # Measures the ability to avoid false positives (correctly identifying negatives).
-    "balanced_accuracy", #Combines sensitivity (recall) and specificity, providing a balanced view across classes.
+    "specificity",  # Measures the ability to avoid false positives (correctly identifying negatives).
+    "balanced_accuracy",  # Combines sensitivity (recall) and specificity, providing a balanced view across classes.
     "positive_predictive_value",
     "negative_predictive_value",
-    "false_negative_rate", #Measures the proportion of missed detections among positives.
-    "false_positive_rate", #Measures the proportion of false alarms among negative samples.
+    "false_negative_rate",  # Measures the proportion of missed detections among positives.
+    "false_positive_rate",  # Measures the proportion of false alarms among negative samples.
     "false_discovery_rate",
     "false_omission_rate",
     "positive_likelihood_ratio",
