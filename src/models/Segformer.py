@@ -29,7 +29,7 @@ class Segformer(nn.Module):
         num_labels: int = 2,
         freeze_encoder=True,
     ):
-        super(Segformer, self).__init__()
+        super().__init__()
 
         # Load configuration with label2id if provided, ensuring correct label alignment.
         self.config = AutoConfig.from_pretrained(
@@ -65,7 +65,7 @@ class Segformer(nn.Module):
 
         original_size = extract_dimension(image)
 
-        inputs = self.image_processor(images=image, return_tensors="pt")
+        inputs = self.image_processor(images=image, return_tensors="pt").to(image.device)
 
         # Forward pass through the model
         outputs = self.model(**inputs)
@@ -90,7 +90,7 @@ class Segformer(nn.Module):
 
         original_size = extract_dimension(image)
 
-        inputs = self.image_processor(images=image, return_tensors="pt")
+        inputs = self.image_processor(images=image, return_tensors="pt").to(image.device)
 
         # Get model output
         outputs = self.model(**inputs)
@@ -104,3 +104,51 @@ class Segformer(nn.Module):
         )
 
         return torch.argmax(predicted_masks, dim=1).cpu().numpy()
+
+    def save(self, path: str):
+        """
+        Save the model and configuration to a specified directory.
+
+        Args:
+            path: Path to the directory where the model will be saved.
+
+        Example : Segformer.load(path="../models/Segformer_cloud_seg")
+        """
+        print(f"Saving model to {path}...")
+        self.model.save_pretrained(path)
+        self.image_processor.save_pretrained(path)
+        print("Model and image processor saved successfully.")
+
+    @classmethod
+    def load(cls, path: str, freeze_encoder=True):
+        """
+        Load a saved model and configuration from a specified directory.
+
+        Args:
+            path: Path to the directory from which the model will be loaded.
+            freeze_encoder: Whether to freeze the encoder weights of the model.
+
+        Returns:
+            An instance of the `Segformer` class.
+        """
+        print(f"Loading model from {path}...")
+        config = AutoConfig.from_pretrained(path, trust_remote_code=True, local_files_only=True)
+        model = AutoModelForSemanticSegmentation.from_pretrained(path, config=config, trust_remote_code=True, local_files_only=True)
+        image_processor = AutoImageProcessor.from_pretrained(path, trust_remote_code=True,  local_files_only=True)
+        
+        # Create an instance of the Segformer class
+        segformer_instance = cls(
+            model_name=path,
+            label2id=config.label2id,
+            num_labels=config.num_labels,
+            freeze_encoder=freeze_encoder
+        )
+        
+        # Replace loaded components into the instance
+        segformer_instance.model = model
+        segformer_instance.image_processor = image_processor
+        if freeze_encoder:
+            segformer_instance._freeze_encoder()
+
+        print("Model loaded successfully.")
+        return segformer_instance

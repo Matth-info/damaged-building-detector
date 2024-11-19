@@ -39,7 +39,6 @@ training_log_interval = 10  # number of step between 2 training logs (avoid too 
 num_classes = 2
 scaler = GradScaler(device=device)
 
-
 def training_step(
     model,
     batch,
@@ -124,7 +123,7 @@ def validation_step(model, batch, loss_fn, metrics):
     # Calculate each metric and accumulate the total
     metrics_step = {}
 
-    # model="multiclass"
+    # mode="multiclass"
     # Output format from (B,N,H,W) => (B,H,W)
     out = outputs.long().argmax(dim=1)
     # Compute the Confusion matrix
@@ -267,7 +266,8 @@ def train(
             params=filter(lambda p: p.requires_grad, model.parameters()), lr=1e-4
         )
     else:
-        optimizer_ft = optimizer
+        optimizer_ft = optimizer(params=filter(lambda p: p.requires_grad, model.parameters()), **params_opt)
+        
 
     if scheduler is None:
         lr_scheduler = torch.optim.lr_scheduler.StepLR(

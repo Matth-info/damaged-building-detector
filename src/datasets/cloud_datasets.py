@@ -20,7 +20,6 @@ class Cloud_DrivenData_Dataset(torch.utils.data.Dataset):
         bands: List[str],
         y_paths: Optional[pd.DataFrame] = None,
         transform: Optional[A.Compose] = None,
-        pytorch: bool = True,
     ):
         """
         Args:
@@ -28,7 +27,6 @@ class Cloud_DrivenData_Dataset(torch.utils.data.Dataset):
             bands (List[str]): List of band names to load.
             y_paths (Optional[pd.DataFrame]): DataFrame containing file paths for corresponding labels (masks).
             transform (Optional[A.Compose]): Albumentations transformations to apply to images and masks.
-            pytorch (bool): Flag to indicate if the data should be in PyTorch's channel-first format (default is True).
 
         Note : The expected bands are B02 : Blue , B03 : Green, B04 : Red, B08 : nir (optional)
         RGB format is [B04, B03, B02]
@@ -39,7 +37,6 @@ class Cloud_DrivenData_Dataset(torch.utils.data.Dataset):
         self.label = y_paths
         self.bands = bands
         self.transform = transform
-        self.pytorch = pytorch
 
     def __len__(self) -> int:
         """
@@ -183,3 +180,121 @@ class Cloud_DrivenData_Dataset(torch.utils.data.Dataset):
         # Adjust layout for better spacing
         plt.tight_layout()
         plt.show()
+
+
+
+def add_paths(df: pd.DataFrame,
+                feature_dir: Path, 
+                label_dir: Path = None, 
+                bands: list = ["B04", "B03", "B02"]
+                ) -> pd.DataFrame:
+    """
+    Adds file paths for each band and label to the dataframe based on chip_id.
+    
+    Args:
+        df (pd.DataFrame): DataFrame containing chip_id (e.g., image identifiers).
+        feature_dir (Path): Directory where feature TIF images are stored.
+        label_dir (Path, optional): Directory where label TIF images are stored. Defaults to None.
+        bands (list): List of band names (e.g., ["B02", "B03", ...]). Defaults to BANDS.
+        
+    Returns:
+        pd.DataFrame: Updated dataframe with new columns for each band path and label path.
+    
+    Adds the following columns to the dataframe:
+        - "{band}_path" for each band image.
+        - "label_path" for the label image, if `label_dir` is provided.
+        - "has_{band}_path" boolean column indicating if the feature file exists.
+        - "has_image_channels" boolean column indicating if all feature band files exist.
+        - "has_label_path" boolean column indicating if the label file exists (if `label_dir` is provided).
+        - "accessible" boolean column indicating if all image channels and label file exist.
+    
+    Ex: train_meta = add_paths(train_meta, TRAIN_FEATURES, TRAIN_LABELS)
+    """
+    # Ensure feature_dir and label_dir are Path objects
+    feature_dir = Path(feature_dir)
+    if label_dir is not None:
+        label_dir = Path(label_dir)
+
+    selected_columns = ["chip_id", "location", "datetime", 
+                        "cloudpath"
+                        ]
+    
+    # Initialize columns to track file existence for each band
+    for band in bands:
+        df[f"{band}_path"] = feature_dir / df["chip_id"] / f"{band}.tif"
+        # Check if the band file exists and add a boolean column
+        df[f"has_{band}_path"] = df[f"{band}_path"].apply(lambda x: x.exists())
+        selected_columns.append(f"{band}_path")
+
+    # Add "has_image_channels" to check if all bands exist
+    df["has_image_channels"] = df[[f"has_{band}_path" for band in bands]].all(axis=1)
+    # Add label path and check existence if label_dir is provided
+    if label_dir is not None:
+        df["label_path"] = label_dir / (df["chip_id"] + ".tif")   
+        # Check if the label file exists and add a boolean column
+        df["has_label_path"] = df["label_path"].apply(lambda x: x.exists())
+        selected_columns.append("label_path")
+    
+    # Add "accessible" column to check if all bands and label file exist
+    df["accessible"] = df["has_image_channels"] & df["has_label_path"]
+    
+    return df[df["accessible"] == True][selected_columns]
+
+
+def prepare_cloud_segmentation_data(folder_path: str = "../data/Cloud_DrivenData/final/public", train_share: float = 0.8):
+    """
+    Data processing function to create training and validation datasets
+    from the DrivenData Cloud Segmentation Challenge dataset.
+
+    Args:
+        folder_path (str): Path to the main dataset directory. Defaults to "../data/Cloud_DrivenData/final/public".
+        train_share (float): Proportion of data to use for training (0 < train_share < 1). Defaults to 0.8.
+
+    Returns:
+        tuple: Four dataframes - train_x, train_y, val_x, val_y
+               - train_x: Training features dataframe
+               - train_y: Training labels dataframe
+               - val_x: Validation features dataframe
+               - val_y: Validation labels dataframe
+    """
+    from pathlib import Path
+    import pandas as pd
+    import random
+
+    # Set up paths and constants
+    DATA_DIR = Path(folder_path).resolve()
+    TRAIN_FEATURES = DATA_DIR / "train_features"
+    TRAIN_LABELS = DATA_DIR / "train_labels"
+    TRAIN_META_FILE = DATA_DIR / "train_metadata.csv"
+    BANDS = ["B04", "B03", "B02"]  # Bands to use; B08 can be added if needed
+
+    # Ensure required directories and files exist
+    assert TRAIN_FEATURES.exists(), f"Train features directory not found: {TRAIN_FEATURES}"
+    assert TRAIN_META_FILE.exists(), f"Metadata file not found: {TRAIN_META_FILE}"
+
+    # Load metadata
+    train_meta = pd.read_csv(TRAIN_META_FILE)
+
+    # Add paths for feature and label files
+    train_meta = add_paths(train_meta, TRAIN_FEATURES, TRAIN_LABELS)
+
+    # Compute validation share
+    val_share = 1 - train_share
+
+    # Split chip IDs into training and validation sets
+    chip_ids = train_meta.chip_id.unique().tolist()
+    val_chip_ids = random.sample(chip_ids, round(len(chip_ids) * val_share))
+
+    # Mask for validation chips
+    val_mask = train_meta.chip_id.isin(val_chip_ids)
+    val = train_meta[val_mask].copy().reset_index(drop=True)
+    train = train_meta[~val_mask].copy().reset_index(drop=True)
+
+    # Separate features and labels
+    feature_cols = ["chip_id"] + [f"{band}_path" for band in BANDS]
+    train_x = train[feature_cols].copy()  # Training features
+    train_y = train[["chip_id", "label_path"]].copy()  # Training labels
+    val_x = val[feature_cols].copy()  # Validation features
+    val_y = val[["chip_id", "label_path"]].copy()  # Validation labels
+
+    return train_x, train_y, val_x, val_y
