@@ -4,7 +4,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 # Vision-related imports
-from torchvision.models import resnet18, resnet34, ResNet18_Weights
+from torchvision.models import resnet18, ResNet18_Weights
 
 
 class ResNet_UNET(nn.Module):
@@ -15,13 +15,13 @@ class ResNet_UNET(nn.Module):
         pretrained=ResNet18_Weights.DEFAULT,
         freeze_backbone=True,
     ):
-        super(ResNet_UNET, self).__init__()
+        super().__init__()
 
         # Modify first layer of ResNet34 to accept custom number of channels
         base_model = resnet18(weights=pretrained)  # Change this line
-        base_model.conv1 = torch.nn.Conv2d(
+        """base_model.conv1 = torch.nn.Conv2d(
             in_channels, 64, kernel_size=7, stride=2, padding=3, bias=False
-        )
+        )"""
 
         self.base_layers = list(base_model.children())
         self.freeze_backbone(freeze_backbone)
@@ -88,8 +88,5 @@ class ResNet_UNET(nn.Module):
     @torch.no_grad()
     def predict(self, x):
         """Inference method"""
-        if self.training:
-            self.eval()
         outputs = self.forward(x)
-
         return torch.argmax(outputs, dim=1).cpu().numpy()

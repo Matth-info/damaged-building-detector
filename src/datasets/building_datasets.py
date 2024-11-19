@@ -311,7 +311,8 @@ class Puerto_Rico_Building_Dataset(Dataset):
 
 class OpenCities_Building_Dataset(Dataset):
     def __init__(
-        self, images_dir: str, masks_dir: str, transform: Optional[A.Compose] = None
+        self, images_dir: str, masks_dir: str, transform: Optional[A.Compose] = None,
+        filter_invalid_image=True
     ):
         """
         Initializes the OpenCities dataset with images and corresponding masks.
@@ -332,6 +333,10 @@ class OpenCities_Building_Dataset(Dataset):
         self.transform = transform
         self.filenames = [Path(x) for x in self.images_dir.glob("*.tif")]
         self.nb_input_channel = 3
+        
+        if filter_invalid_image: 
+            self.remove_invalid_sample()
+            
 
     def __len__(self):
         """Returns the total number of samples in the dataset."""
@@ -341,6 +346,35 @@ class OpenCities_Building_Dataset(Dataset):
         # Split the string at '.tif' and return the part before it
         return filepath.stem
 
+    def remove_invalid_sample(self):
+        """ 
+        Removes invalid samples (image and mask) from the dataset. 
+        Some images might be corrupted and cannot be opened by rasterio.
+        """
+        from tqdm import tqdm
+        import logging
+
+        valid_filenames = []  # Store valid filenames
+
+        for image_path in tqdm(self.filenames, desc="Removing Invalid Samples"):
+            filename = self.extract_filename(image_path)
+            filename_mask = f"{filename}_mask.tif"
+            mask_path = os.path.join(self.masks_dir, filename_mask)
+
+            # Try to load the image and the corresponding mask
+            try:
+                image = self.read_image(image_path)
+                mask = self.read_mask(mask_path)
+                # If no exception, keep this sample
+                valid_filenames.append(image_path)
+            except (rasterio.errors.RasterioIOError, FileNotFoundError) as e:
+                # Log the error and skip this sample
+                logging.warning(f"Error opening image or mask for {image_path}. Skipping this file.")
+
+        # Update the dataset with only valid filenames
+        self.filenames = valid_filenames
+
+    
     def __getitem__(self, idx: int):
         """Fetches and returns a single dataset sample with optional transformations."""
         image_path = self.filenames[idx]
@@ -349,21 +383,21 @@ class OpenCities_Building_Dataset(Dataset):
         )  # Convert Path to string before extracting filename
         filename_mask = f"{filename}_mask.tif"
         mask_path = os.path.join(self.masks_dir, filename_mask)
-
-        # Load the image and the corresponding mask
-        sample = {
-            "image": self.read_image(image_path),
-            "mask": self.read_mask(mask_path),
-        }
-
+        image = self.read_image(image_path)
+        mask = self.read_mask(mask_path)
+    
         # Apply transformations if specified
         if self.transform is not None:
             # Albumentation expect (H, W, C) images
             transformed = self.transform(
-                image=sample["image"].transpose(1, 2, 0), mask=sample["mask"]
+                image=image.transpose(1, 2, 0), mask=mask
             )
-            sample = transformed
-        return sample  # {"image" : ..., "mask" : ...}
+            image, mask = transformed["image"], transformed["mask"],
+        else:
+            image = torch.tensor(image, dtype=torch.float32) / 255
+            mask = torch.tensor(mask, dtype=torch.int64)
+
+        return {"image": image, "mask": mask}  # {"image" : ..., "mask" : ...}
 
     def read_image(self, path: Path):
         """Reads and returns the image from a given path."""

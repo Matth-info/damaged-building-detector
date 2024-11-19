@@ -103,8 +103,6 @@ def validation_step(model, batch, loss_fn, metrics):
     x = batch["image"].to(torch.float16 if is_mixed_precision else torch.float32)
     y = batch["mask"].to(torch.float16 if is_mixed_precision else torch.float32)
 
-    batch_size = x.shape[0]
-
     if device == "cuda":
         x = x.to(device, non_blocking=True)
         y = y.to(device, non_blocking=True)
@@ -266,7 +264,10 @@ def train(
             params=filter(lambda p: p.requires_grad, model.parameters()), lr=1e-4
         )
     else:
-        optimizer_ft = optimizer(params=filter(lambda p: p.requires_grad, model.parameters()), **params_opt)
+        if optimizer.__class__.__name__ == "type": 
+            optimizer_ft = optimizer(params=filter(lambda p: p.requires_grad, model.parameters()), **params_opt)
+        else:
+            optimizer_ft = optimizer # has been defined outside the train function
         
 
     if scheduler is None:
@@ -274,7 +275,10 @@ def train(
             optimizer_ft, step_size=10, gamma=0.1
         )
     else:
-        lr_scheduler = scheduler(optimizer=optimizer_ft, **params_sc)
+        if scheduler.__class__.__name__ == "type": 
+            lr_scheduler = scheduler(optimizer=optimizer_ft, **params_sc)
+        else:
+            lr_scheduler = scheduler # has been defined outside the train function
 
     # initialize some variables
     best_avg_metric = 0
