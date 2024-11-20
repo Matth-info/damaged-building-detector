@@ -46,8 +46,9 @@ def training_step(
     optimizer: optim,
     metrics: List[Callable],
     step_number: int,
+    image_key="image"
 ):
-    x = batch["image"].to(torch.float16 if is_mixed_precision else torch.float32)
+    x = batch[image_key].to(torch.float16 if is_mixed_precision else torch.float32)
     y = batch["mask"].to(torch.float16 if is_mixed_precision else torch.float32)
 
     loss = 0.0
@@ -98,9 +99,9 @@ def training_step(
     return loss, metrics_step
 
 
-def validation_step(model, batch, loss_fn, metrics):
+def validation_step(model, batch, loss_fn, metrics, image_key="image"):
 
-    x = batch["image"].to(torch.float16 if is_mixed_precision else torch.float32)
+    x = batch[image_key].to(torch.float16 if is_mixed_precision else torch.float32)
     y = batch["mask"].to(torch.float16 if is_mixed_precision else torch.float32)
 
     if device == "cuda":
@@ -145,6 +146,7 @@ def training_epoch(
     scheduler: optim.lr_scheduler,
     epoch_number: int,
     writer: SummaryWriter,
+    image_key="image"
 ):
     print(f"Epoch {epoch_number + 1}")
     print("-" * 10)
@@ -162,6 +164,7 @@ def training_epoch(
             metrics=metrics,
             optimizer=optimizer,
             step_number=step,
+            image_key=image_key
         )
         # Accumulate loss
         batch_size = batch["image"].size(0)
@@ -191,6 +194,7 @@ def validation_epoch(
     loss_fn: nn.Module,
     epoch_number: int,
     metrics: List[Callable] = [],
+    image_key: str = "image"
 ) -> Tuple[int, Dict[str, float]]:
 
     running_loss = 0.0
@@ -202,9 +206,9 @@ def validation_epoch(
     model.eval()  # Set model to evaluation mode
 
     for step, batch in enumerate(valid_dl):
-        batch_size = batch["image"].size(0)
+        batch_size = batch[image_key].size(0)
         vloss, metrics_step = validation_step(
-            model, batch, loss_fn=loss_fn, metrics=metrics
+            model, batch, loss_fn=loss_fn, metrics=metrics, image_key=image_key
         )
         # Accumulate validation loss
         running_loss += vloss * batch_size
@@ -240,6 +244,7 @@ def train(
     log_dir="runs",
     model_dir="models",
     early_stopping_params: Optional[Dict[str, int]] = None,
+    image_key="image"
 ):
 
     # Create a directory for the experiment
@@ -305,6 +310,7 @@ def train(
                 scheduler=lr_scheduler,
                 epoch_number=epoch,
                 writer=writer,
+                image_key=image_key
             )
 
             epoch_vloss, epoch_vmetrics = validation_epoch(
@@ -313,6 +319,7 @@ def train(
                 loss_fn=loss_fn,
                 metrics=metrics,
                 epoch_number=epoch,
+                image_key=image_key
             )
 
             lr_scheduler.step()

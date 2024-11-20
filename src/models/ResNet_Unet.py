@@ -1,8 +1,6 @@
 # PyTorch imports
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
-
 # Vision-related imports
 from torchvision.models import resnet18, ResNet18_Weights
 
@@ -15,6 +13,7 @@ class ResNet_UNET(nn.Module):
         pretrained=ResNet18_Weights.DEFAULT,
         freeze_backbone=True,
     ):
+        #super(ResNet_UNET, self).__init__()
         super().__init__()
 
         # Modify first layer of ResNet34 to accept custom number of channels
@@ -81,8 +80,8 @@ class ResNet_UNET(nn.Module):
 
     def freeze_backbone(self, freeze_backbone):
         if freeze_backbone:
-            for l in self.base_layers:
-                for param in l.parameters():
+            for layer in self.base_layers:
+                for param in layer.parameters():
                     param.requires_grad = False
 
     @torch.no_grad()
@@ -90,3 +89,13 @@ class ResNet_UNET(nn.Module):
         """Inference method"""
         outputs = self.forward(x)
         return torch.argmax(outputs, dim=1).cpu().numpy()
+
+    def save(self, file_path):
+        torch.save(self.state_dict(), file_path)
+        print(f"{self.__class__.__name__} Model saved to {file_path}")
+
+    def load(self, file_path):
+        # Load the state_dict into the model
+        self.load_state_dict(torch.load(file_path))
+        print(f"{self.__class__.__name__} Model loaded from {file_path}")
+        return self
