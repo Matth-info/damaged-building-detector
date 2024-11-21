@@ -3,16 +3,19 @@ import re
 import torch
 import numpy as np
 import matplotlib.pyplot as plt
-from PIL import Image
+from PIL import Image, ImageDraw
 from pathlib import Path
 from typing import List, Dict, Optional
 from torch.utils.data import Dataset
+from shapely import wkt
+from shapely.geometry.multipolygon import MultiPolygon
 import albumentations as A  # Import alias for Albumentations
 import rasterio
 import re
 import glob
 import csv 
 from tqdm import tqdm
+import json
 
 class Puerto_Rico_Building_Dataset(Dataset):
     def __init__(
@@ -464,4 +467,309 @@ class OpenCities_Building_Dataset(Dataset):
                 ax[i][j].axis("off")
 
         plt.tight_layout()
+        plt.show()
+
+
+
+
+# Color codes for polygons
+damage_dict = {
+    "no-damage": (0, 255, 0, 50), #Green
+    "minor-damage": (0, 0, 255, 50), #Blue
+    "major-damage": (255, 69, 0, 50), #Red-Green
+    "destroyed": (255, 0, 0, 50), #Red
+    "un-classified": (255, 255, 255, 50)
+}
+
+class xDB_Damaged_Building(Dataset):
+    def __init__(self, 
+                 origin_dir: str,
+                 mode = "building",
+                 time = "pre",
+                 transform: Optional[A.Compose] = None,
+                 type: str = "train",
+                 val_ratio=0.1, 
+                 test_ratio=0.1
+                 ):
+        
+        assert type in ["train", "val", "test"], "Dataset must be 'train','val' or 'test'"
+        self.type = type
+
+        self.label_dir = Path(origin_dir) / "labels"
+        assert mode in ["building", "damage"], "Mode must be 'building' or 'damage'."
+        self.mode = mode 
+        self.time = time
+        self.list_labels = [str(x) for x in self.label_dir.rglob(pattern=f'*{self.time}_*.json')]
+        self.transform = transform
+
+        self.val_ratio=val_ratio
+        self.test_ratio=test_ratio
+
+        self._split() # perform a split datases train, val, test 
+    
+    def _split(self):
+        # Calculate the size of each split
+        total_size = len(self.list_labels)
+        test_size = int(total_size * self.test_ratio)
+        val_size = int(total_size * self.val_ratio)
+        train_size = total_size - test_size - val_size
+
+        # Shuffle indices for random splits
+        indices = np.random.permutation(total_size)
+
+        # Split indices
+        train_indices = indices[:train_size]
+        val_indices = indices[train_size:train_size + val_size]
+        test_indices = indices[train_size + val_size:]
+
+        # Now, depending on self.type, choose which split to use
+        if self.type == "train":
+            self.list_labels = [self.list_labels[i] for i in train_indices]
+        elif self.type == "val":
+            self.list_labels = [self.list_labels[i] for i in val_indices]
+        elif self.type == "test":
+            self.list_labels = [self.list_labels[i] for i in test_indices]
+        else:
+            raise ValueError("Unknown dataset type. Use 'train', 'val', or 'test'.")
+
+        # Now self.list_labels will contain the appropriate split based on self.type
+        print(f"Loaded {len(self.list_labels)} {self.type} labels.")
+
+    def __getitem__(self, index) -> Dict[str,torch.tensor]:
+        """
+        Retrieve an image and its corresponding mask for semantic segmentation.
+
+        Parameters:
+            index (int): Index of the image-mask pair.
+
+        Returns:
+            dict: A dictionary containing:
+                - 'image': Transformed image as a torch tensor.
+                - 'mask': Corresponding mask as a torch tensor.
+        """
+        # Get the JSON path for the given index
+        json_path = self.list_labels[index]
+        
+        # Load the image
+        image = self.get_image(json_path)
+        
+        # Load the mask
+        mask = self.get_mask(json_path, mode=self.mode)
+        
+        # Apply transformations if defined
+        if self.transform:
+            # Compose image and mask into a single dict for joint transformation
+            image = np.float32(np.array(image)/255.0)
+            transformed = self.transform(image=image, mask=mask)
+            image = transformed["image"]
+            mask = transformed["mask"]
+        else:
+            # Convert image and mask to tensors directly if no transform
+            image = torch.from_numpy(np.array(image)).permute(2, 0, 1).float() / 255.0  # Normalize to [0, 1]
+            mask = torch.from_numpy(mask).long()
+
+        return {"image": image, "mask": mask}
+    
+    def __len__(self) -> int:
+        """Returns the total number of samples in the dataset."""
+        return len(self.list_labels)
+    
+    def get_image(self, json_path) -> Image:
+        """
+        Open image file based on the json_path label file.
+        
+        Image path example: ../images/joplin-tornado_00000000_post_disaster.png
+        Label path example: ../labels/joplin-tornado_00000000_post_disaster.json
+        
+        Parameters:
+            json_path (str): Path to the label JSON file.
+            time (str): "pre" for pre-disaster image, "post" for post-disaster image.
+        
+        Returns:
+            PIL.Image.Image: The corresponding image.
+        
+        Raises:
+            FileNotFoundError: If the image file is not found.
+        """
+
+        # Adjust path for "pre" time if needed
+        if self.time == 'pre':
+            json_path = json_path.replace('post', 'pre')
+
+        # Replace 'labels' with 'images' and '.json' with '.png'
+        img_path = json_path.replace('labels', 'images').replace('.json', '.png')
+        # Open and return the image
+        return Image.open(img_path)
+    
+    def get_damage_type(self, properties) -> str:
+        if 'subtype' in properties:
+            return properties['subtype']
+        else:
+            return 'no-damage'
+    
+    def get_mask(self, label_path, mode="building") -> np.ndarray:
+        """
+        Build a mask from a label file.
+
+        Parameters:
+            label_path (str): Path to the JSON label file.
+            image_size (tuple): Size of the output mask (height, width).
+            mode (str): "building" for binary mask, "damage" for multiclass mask.
+
+        Returns:
+            np.ndarray: Mask as a numpy array.
+        """        
+        # Load JSON file
+        with open(label_path) as json_file:
+            image_json = json.load(json_file)
+        
+        # Extract building polygons and their damage types
+        metadata = image_json["metadata"]
+        image_height , image_width = metadata["height"], metadata["width"]
+        coords = image_json['features']["xy"]
+        wkt_polygons = []
+
+        for coord in coords:
+            damage = self.get_damage_type(coord['properties'])  # Get damage type
+            wkt_polygons.append((damage, coord['wkt']))
+        
+        # Convert WKT to Shapely polygons
+        polygons = []
+        for damage, swkt in wkt_polygons:
+            polygons.append((damage, wkt.loads(swkt)))
+
+        # Initialize the mask
+        mask = Image.new('L', (image_height , image_width), 0)  # 'L' mode for grayscale, initialized to 0
+        draw = ImageDraw.Draw(mask)
+
+        # Define damage classes (used in "damage" mode)
+        damage_classes = {
+            "no-damage": 1,
+            "minor-damage": 2,
+            "major-damage": 3,
+            "destroyed": 4
+        }
+        # Draw polygons on the mask
+        for damage, polygon in polygons:
+            if polygon.is_valid:  # Ensure the polygon is valid
+                x, y = polygon.exterior.coords.xy
+                coords = list(zip(x, y))
+                if mode == "building":
+                    draw.polygon(coords, fill=1)  # All buildings get a value of 1
+                elif mode == "damage":
+                    damage_value = damage_classes.get(damage, 0)  # Default to 0 for unknown
+                    draw.polygon(coords, fill=damage_value)
+
+        # Convert mask to numpy array
+        return np.array(mask)
+    
+    def annotate_img(self, draw, coords):
+        wkt_polygons = []
+        for coord in coords:
+            damage = self.get_damage_type(coord['properties'])
+            wkt_polygons.append((damage, coord['wkt']))
+
+        polygons = []
+
+        for damage, swkt in wkt_polygons:
+            polygons.append((damage, wkt.loads(swkt)))
+
+        for damage, polygon in polygons:
+            x,y = polygon.exterior.coords.xy
+            coords = list(zip(x,y))
+            draw.polygon(coords, damage_dict[damage])
+
+        del draw
+
+    def display_img(self, idx, time='pre', annotated=True):
+        json_path = self.list_labels[idx]
+        if time=='pre':
+            json_path = json_path.replace('post', 'pre')
+        
+        img_path = json_path.replace('labels', 'images').replace('json','png')
+
+        with open(json_path) as json_file:
+            image_json = json.load(json_file)
+
+        # Read Image 
+        img = Image.open(img_path)
+        draw = ImageDraw.Draw(img, 'RGBA')
+
+        if annotated:
+            self.annotate_img(draw=draw,coords=image_json['features']['xy'])
+        return img 
+
+    def extract_metadata(self, idx, time="pre"):
+        label_path = self.list_labels[idx]
+
+        if time=='pre':
+            label_path = label_path.replace('post', 'pre')
+        elif time=="post":
+            label_path = label_path.replace('pre', 'post')
+
+        # Load JSON file
+        with open(label_path) as json_file:
+            image_json = json.load(json_file)
+        
+        return image_json["metadata"]
+    
+    def display_list(self, list_ids: List[int], time="pre", annotated=True, cols=3):
+        """
+        Display a list of images with or without annotations.
+
+        Parameters:
+            list_ids (List[int]): List of indices of images to display.
+            annotated (bool): If True, overlay annotations on the images.
+            cols (int): Number of columns in the grid for displaying images.
+        """
+        # Number of images
+        num_images = len(list_ids)
+        
+        # Determine grid size
+        rows = (num_images + cols - 1) // cols  # Ceiling division
+        
+        # Set up the matplotlib figure
+        fig, axes = plt.subplots(rows, cols, figsize=(15, 5 * rows))
+        axes = axes.flatten()  # Flatten the axes array for easier indexing
+
+        for i, idx in enumerate(list_ids):
+            # Get the image
+            img = self.display_img(idx,time=time, annotated=annotated)
+            metadata = self.extract_metadata(idx)
+            disaster_name, disaster_type = metadata["disaster"], metadata["disaster_type"]
+            
+            # Display the image
+            axes[i].imshow(img)
+            axes[i].set_title(f"Image {idx} / {disaster_name} / {disaster_type}")
+            axes[i].axis("off")  # Hide axis ticks
+
+        # Hide any remaining axes if the grid is larger than the number of images
+        for j in range(num_images, len(axes)):
+            axes[j].axis("off")
+        
+        # Adjust layout and show the plot
+        plt.tight_layout()
+        plt.show()
+
+    def plot_image(self, idx, save = False):
+        # read images
+        img_A = self.display_img(idx, time='pre', annotated=False)
+        img_B = self.display_img(idx, time='post', annotated=False)
+        img_C = self.display_img(idx, time='pre', annotated=True)
+        img_D = self.display_img(idx, time='post', annotated=True)
+
+        # display images
+        fig, ax = plt.subplots(2,2)
+        fig.set_size_inches(30, 30)
+        TITLE_FONT_SIZE = 24
+        ax[0][0].imshow(img_A)
+        ax[0][0].set_title('Pre Diaster Image (Not Annotated)', fontsize=TITLE_FONT_SIZE)
+        ax[0][1].imshow(img_B)
+        ax[0][1].set_title('Post Diaster Image (Not Annotated)', fontsize=TITLE_FONT_SIZE)
+        ax[1][0].imshow(img_C)
+        ax[1][0].set_title('Pre Diaster Image (Annotated)', fontsize=TITLE_FONT_SIZE)
+        ax[1][1].imshow(img_D)
+        ax[1][1].set_title('Post Diaster Image (Annotated)', fontsize=TITLE_FONT_SIZE)
+        if save:
+            plt.savefig('split_image.png', dpi = 100)
         plt.show()

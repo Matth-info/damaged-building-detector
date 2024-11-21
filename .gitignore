@@ -2,7 +2,9 @@
 *.pth
 *.pyc
 
-# Allow the specific data/data_samples folder and its contents
-!data/data_samples/
-!data/data_samples/**
+# Ignore complete dataset 
+data/xDB
+data/Cloud_DrivenData
+data/Open-cities
+data/Puerto_Rico_Dataset
 

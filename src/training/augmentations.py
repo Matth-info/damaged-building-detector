@@ -1,6 +1,7 @@
 # File describing some data augmentation pipeline using Albumentations
 
 import albumentations as A
+from albumentations.pytorch import ToTensorV2
 
 training_transformations = A.Compose(
     [
@@ -10,5 +11,6 @@ training_transformations = A.Compose(
         A.HorizontalFlip(p=0.5),
         A.VerticalFlip(p=0.5),
         A.GaussianBlur(p=0.25),
+        ToTensorV2()
     ]
 )

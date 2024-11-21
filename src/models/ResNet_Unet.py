@@ -2,7 +2,25 @@
 import torch
 import torch.nn as nn
 # Vision-related imports
-from torchvision.models import resnet18, ResNet18_Weights
+from torchvision.models import (
+    resnet18,
+    resnet34, 
+    resnet50, 
+    ResNet18_Weights,
+    ResNet34_Weights,
+    ResNet50_Weights
+)
+
+def choose_resnet(model_name="resnet18", pretrained=True):
+
+    if model_name=="resnet18":
+        return resnet18(weights=ResNet18_Weights.DEFAULT if pretrained else None)
+    elif model_name=="resnet34":
+        return resnet34(weights=ResNet34_Weights.DEFAULT if pretrained else None)
+    elif model_name=="resnet50":
+        return resnet50(weights=ResNet50_Weights.DEFAULT if pretrained else None)
+    else:
+        raise ModuleNotFoundError
 
 
 class ResNet_UNET(nn.Module):
@@ -10,26 +28,22 @@ class ResNet_UNET(nn.Module):
         self,
         in_channels=3,
         out_channels=2,
-        pretrained=ResNet18_Weights.DEFAULT,
+        backbone_name="resnet18",
+        pretrained=True,
         freeze_backbone=True,
     ):
         #super(ResNet_UNET, self).__init__()
         super().__init__()
 
         # Modify first layer of ResNet34 to accept custom number of channels
-        base_model = resnet18(weights=pretrained)  # Change this line
-        """base_model.conv1 = torch.nn.Conv2d(
-            in_channels, 64, kernel_size=7, stride=2, padding=3, bias=False
-        )"""
-
+        base_model = choose_resnet(model_name=backbone_name, pretrained=pretrained)  # Change this line
+       
         self.base_layers = list(base_model.children())
         self.freeze_backbone(freeze_backbone)
 
         # Define the Unet Head/Neck
         self.layer0 = nn.Sequential(*self.base_layers[:3])  # size=(N, 64, x.H/2, x.W/2)
-        self.layer1 = nn.Sequential(
-            *self.base_layers[3:5]
-        )  # size=(N, 64, x.H/4, x.W/4)
+        self.layer1 = nn.Sequential(*self.base_layers[3:5])  # size=(N, 64, x.H/4, x.W/4)
         self.layer2 = self.base_layers[5]  # size=(N, 128, x.H/8, x.W/8)
         self.layer3 = self.base_layers[6]  # size=(N, 256, x.H/16, x.W/16)
         self.layer4 = self.base_layers[7]  # size=(N, 512, x.H/32, x.W/32)
