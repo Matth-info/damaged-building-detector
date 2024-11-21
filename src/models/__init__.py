@@ -1,9 +1,6 @@
-from .Auto_Encoder import Auto_encoder
+from .Auto_Encoder import AutoEncoder
 from .ResNet_Unet import ResNet_UNET
 from .Segformer import Segformer
+from .Unet import UNet
 
-__all__ = [
-    'Auto_encoder', 
-    'ResNet_UNET',
-    'Segformer'
-]
+__all__ = ["AutoEncoder", "ResNet_UNET", "Segformer", "UNet"]

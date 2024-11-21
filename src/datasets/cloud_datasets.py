@@ -1,16 +1,17 @@
 # Dataset folder keep track of the custom pytorch dataset that have been used to load, preprocess data according to the source dataset and the model specificity
-import os 
-import torch 
+import os
+import torch
 import albumentations
 import albumentations as A
 from albumentations.pytorch import ToTensorV2
 import numpy as np
-import pandas as pd 
+import pandas as pd
 from PIL import Image
 from torch.utils.data import Dataset
 from pathlib import Path
 from typing import List, Optional
 import matplotlib.pyplot as plt
+
 
 class Cloud_DrivenData_Dataset(torch.utils.data.Dataset):
     def __init__(
@@ -19,7 +20,6 @@ class Cloud_DrivenData_Dataset(torch.utils.data.Dataset):
         bands: List[str],
         y_paths: Optional[pd.DataFrame] = None,
         transform: Optional[A.Compose] = None,
-        pytorch: bool = True
     ):
         """
         Args:
@@ -27,18 +27,16 @@ class Cloud_DrivenData_Dataset(torch.utils.data.Dataset):
             bands (List[str]): List of band names to load.
             y_paths (Optional[pd.DataFrame]): DataFrame containing file paths for corresponding labels (masks).
             transform (Optional[A.Compose]): Albumentations transformations to apply to images and masks.
-            pytorch (bool): Flag to indicate if the data should be in PyTorch's channel-first format (default is True).
-        
+
         Note : The expected bands are B02 : Blue , B03 : Green, B04 : Red, B08 : nir (optional)
         RGB format is [B04, B03, B02]
-        
+
         """
         super().__init__()
         self.data = x_paths
         self.label = y_paths
         self.bands = bands
         self.transform = transform
-        self.pytorch = pytorch
 
     def __len__(self) -> int:
         """
@@ -49,7 +47,7 @@ class Cloud_DrivenData_Dataset(torch.utils.data.Dataset):
     def load_channel(self, filepath: str) -> np.ndarray:
         """
         Loads a single image channel from the provided file path.
-        
+
         Args:
             filepath (str): Path to the image file.
 
@@ -61,7 +59,7 @@ class Cloud_DrivenData_Dataset(torch.utils.data.Dataset):
     def open_mask(self, idx: int) -> np.ndarray:
         """
         Loads the mask from the provided file path.
-        
+
         Args:
             idx (int): Index in self.label list.
 
@@ -74,40 +72,45 @@ class Cloud_DrivenData_Dataset(torch.utils.data.Dataset):
     def open_as_array(self, idx: int) -> np.ndarray:
         """
         Loads the image channels for the sample at the given index and stacks them into a single array.
-        
+
         Args:
-            idx (int): Index of the sample in the DataFrame.        
+            idx (int): Index of the sample in the DataFrame.
         Returns:
             np.ndarray: Stacked image channels as a NumPy array, normalized to [0, 1].
         """
         # Load the channels based on the band names and stack them
-        band_arrs = [self.load_channel(self.data.loc[idx][f"{band}_path"]) for band in self.bands]
+        band_arrs = [
+            self.load_channel(self.data.loc[idx][f"{band}_path"]) for band in self.bands
+        ]
         x_arr = np.stack(band_arrs, axis=-1)
 
         # Normalize the array (divide by max value to scale between 0 and 1)
-        x_arr = (x_arr - x_arr.min()) / (x_arr.max() - x_arr.min()) 
+        x_arr = (x_arr - x_arr.min()) / (x_arr.max() - x_arr.min())
         return x_arr
 
     def true_color_img(self, idx):
-        visible_bands = ["B04", "B03", "B02"] #RGB
-        band_arrs = [self.load_channel(self.data.loc[idx][f"{band}_path"]) for band in visible_bands]
+        visible_bands = ["B04", "B03", "B02"]  # RGB
+        band_arrs = [
+            self.load_channel(self.data.loc[idx][f"{band}_path"])
+            for band in visible_bands
+        ]
         x_arr = np.stack(band_arrs, axis=-1)
         # Normalize the array (divide by max value to scale between 0 and 1)
-        x_arr = (x_arr - x_arr.min()) / (x_arr.max() - x_arr.min()) 
-        return x_arr 
+        x_arr = (x_arr - x_arr.min()) / (x_arr.max() - x_arr.min())
+        return x_arr
 
     def __getitem__(self, idx: int) -> torch.Tensor:
-        """ 
+        """
         Retrieves a single sample (image and label) from the dataset, applying transformations if specified.
-        
+
         Args:
             idx (int): Index of the sample in the dataset.
-        
+
         Returns:
             tuple: A tuple containing the image tensor and the mask tensor (if labels exist).
         """
         # Load image channels and optional mask
-        x = self.open_as_array(idx).astype(np.float32) # numpy format (H,W,C)
+        x = self.open_as_array(idx).astype(np.float32)  # numpy format (H,W,C)
         y = None
         if self.label is not None:
             y = self.open_mask(idx)
@@ -116,13 +119,13 @@ class Cloud_DrivenData_Dataset(torch.utils.data.Dataset):
         if self.transform:
             if y is not None:
                 augmented = self.transform(image=x, mask=y)
-                x, y = augmented['image'], augmented['mask']
+                x, y = augmented["image"], augmented["mask"]
             else:
                 augmented = self.transform(image=x)
-                x = augmented['image']
-        
+                x = augmented["image"]
+
         # Convert to PyTorch tensors and normalize
-        if self.transform is None: # numpy to torch tensor
+        if self.transform is None:  # numpy to torch tensor
             x = x.transpose((2, 0, 1))
             x = torch.tensor(x, dtype=torch.float32)
             if y is not None:
@@ -134,21 +137,23 @@ class Cloud_DrivenData_Dataset(torch.utils.data.Dataset):
     def __repr__(self) -> str:
         """
         String representation of the dataset class, showing the number of samples.
-        
+
         Returns:
             str: Dataset class representation.
         """
-        return f'Dataset class with {len(self)} samples'
+        return f"Dataset class with {len(self)} samples"
 
     def display_data(self, list_indices: List[int]) -> None:
         """
         Displays a grid of images and their corresponding masks for a given list of sample indices.
-        
+
         Args:
             list_indices (List[int]): List of indices to display.
         """
         num_samples = len(list_indices)
-        rows = (num_samples + 1) // 2  # Calculate the number of rows for the subplot grid
+        rows = (
+            num_samples + 1
+        ) // 2  # Calculate the number of rows for the subplot grid
         fig, ax = plt.subplots(rows, 2, figsize=(15, 5 * rows))
 
         # Handle cases where there is only one sample by making ax iterable
@@ -162,16 +167,134 @@ class Cloud_DrivenData_Dataset(torch.utils.data.Dataset):
 
             # Display image and mask
             ax[i][0].imshow(x)
-            ax[i][0].set_title(f'Sample {idx + 1}')
-            ax[i][0].axis('off')
+            ax[i][0].set_title(f"Sample {idx + 1}")
+            ax[i][0].axis("off")
 
             if mask is not None:
                 ax[i][1].imshow(mask)
-                ax[i][1].set_title(f'Ground truth {idx + 1}')
-                ax[i][1].axis('off')
+                ax[i][1].set_title(f"Ground truth {idx + 1}")
+                ax[i][1].axis("off")
             else:
-                ax[i][1].axis('off')
+                ax[i][1].axis("off")
 
         # Adjust layout for better spacing
         plt.tight_layout()
         plt.show()
+
+
+
+def add_paths(df: pd.DataFrame,
+                feature_dir: Path, 
+                label_dir: Path = None, 
+                bands: list = ["B04", "B03", "B02"]
+                ) -> pd.DataFrame:
+    """
+    Adds file paths for each band and label to the dataframe based on chip_id.
+    
+    Args:
+        df (pd.DataFrame): DataFrame containing chip_id (e.g., image identifiers).
+        feature_dir (Path): Directory where feature TIF images are stored.
+        label_dir (Path, optional): Directory where label TIF images are stored. Defaults to None.
+        bands (list): List of band names (e.g., ["B02", "B03", ...]). Defaults to BANDS.
+        
+    Returns:
+        pd.DataFrame: Updated dataframe with new columns for each band path and label path.
+    
+    Adds the following columns to the dataframe:
+        - "{band}_path" for each band image.
+        - "label_path" for the label image, if `label_dir` is provided.
+        - "has_{band}_path" boolean column indicating if the feature file exists.
+        - "has_image_channels" boolean column indicating if all feature band files exist.
+        - "has_label_path" boolean column indicating if the label file exists (if `label_dir` is provided).
+        - "accessible" boolean column indicating if all image channels and label file exist.
+    
+    Ex: train_meta = add_paths(train_meta, TRAIN_FEATURES, TRAIN_LABELS)
+    """
+    # Ensure feature_dir and label_dir are Path objects
+    feature_dir = Path(feature_dir)
+    if label_dir is not None:
+        label_dir = Path(label_dir)
+
+    selected_columns = ["chip_id", "location", "datetime", 
+                        "cloudpath"
+                        ]
+    
+    # Initialize columns to track file existence for each band
+    for band in bands:
+        df[f"{band}_path"] = feature_dir / df["chip_id"] / f"{band}.tif"
+        # Check if the band file exists and add a boolean column
+        df[f"has_{band}_path"] = df[f"{band}_path"].apply(lambda x: x.exists())
+        selected_columns.append(f"{band}_path")
+
+    # Add "has_image_channels" to check if all bands exist
+    df["has_image_channels"] = df[[f"has_{band}_path" for band in bands]].all(axis=1)
+    # Add label path and check existence if label_dir is provided
+    if label_dir is not None:
+        df["label_path"] = label_dir / (df["chip_id"] + ".tif")   
+        # Check if the label file exists and add a boolean column
+        df["has_label_path"] = df["label_path"].apply(lambda x: x.exists())
+        selected_columns.append("label_path")
+    
+    # Add "accessible" column to check if all bands and label file exist
+    df["accessible"] = df["has_image_channels"] & df["has_label_path"]
+    
+    return df[df["accessible"] == True][selected_columns]
+
+
+def prepare_cloud_segmentation_data(folder_path: str = "../data/Cloud_DrivenData/final/public", train_share: float = 0.8):
+    """
+    Data processing function to create training and validation datasets
+    from the DrivenData Cloud Segmentation Challenge dataset.
+
+    Args:
+        folder_path (str): Path to the main dataset directory. Defaults to "../data/Cloud_DrivenData/final/public".
+        train_share (float): Proportion of data to use for training (0 < train_share < 1). Defaults to 0.8.
+
+    Returns:
+        tuple: Four dataframes - train_x, train_y, val_x, val_y
+               - train_x: Training features dataframe
+               - train_y: Training labels dataframe
+               - val_x: Validation features dataframe
+               - val_y: Validation labels dataframe
+    """
+    from pathlib import Path
+    import pandas as pd
+    import random
+
+    # Set up paths and constants
+    DATA_DIR = Path(folder_path).resolve()
+    TRAIN_FEATURES = DATA_DIR / "train_features"
+    TRAIN_LABELS = DATA_DIR / "train_labels"
+    TRAIN_META_FILE = DATA_DIR / "train_metadata.csv"
+    BANDS = ["B04", "B03", "B02"]  # Bands to use; B08 can be added if needed
+
+    # Ensure required directories and files exist
+    assert TRAIN_FEATURES.exists(), f"Train features directory not found: {TRAIN_FEATURES}"
+    assert TRAIN_META_FILE.exists(), f"Metadata file not found: {TRAIN_META_FILE}"
+
+    # Load metadata
+    train_meta = pd.read_csv(TRAIN_META_FILE)
+
+    # Add paths for feature and label files
+    train_meta = add_paths(train_meta, TRAIN_FEATURES, TRAIN_LABELS)
+
+    # Compute validation share
+    val_share = 1 - train_share
+
+    # Split chip IDs into training and validation sets
+    chip_ids = train_meta.chip_id.unique().tolist()
+    val_chip_ids = random.sample(chip_ids, round(len(chip_ids) * val_share))
+
+    # Mask for validation chips
+    val_mask = train_meta.chip_id.isin(val_chip_ids)
+    val = train_meta[val_mask].copy().reset_index(drop=True)
+    train = train_meta[~val_mask].copy().reset_index(drop=True)
+
+    # Separate features and labels
+    feature_cols = ["chip_id"] + [f"{band}_path" for band in BANDS]
+    train_x = train[feature_cols].copy()  # Training features
+    train_y = train[["chip_id", "label_path"]].copy()  # Training labels
+    val_x = val[feature_cols].copy()  # Validation features
+    val_y = val[["chip_id", "label_path"]].copy()  # Validation labels
+
+    return train_x, train_y, val_x, val_y
