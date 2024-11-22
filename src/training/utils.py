@@ -35,7 +35,9 @@ def log_loss(
     - step_number: The current step number.
     - phase: 'Validation' or 'Training', used to distinguish metrics in TensorBoard.
     """
-    writer.add(f"{phase}/Loss", loss_value, step_number, phase)
+    writer.add_scalar(f"{phase}/Loss", loss_value, step_number)
+
+
 
 def log_images_to_tensorboard(
     model: torch.nn.Module,
