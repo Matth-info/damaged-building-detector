@@ -5,10 +5,11 @@ from torch.utils.tensorboard import SummaryWriter
 from torch.utils.data import Dataset, DataLoader
 from typing import Union
 import os
+from prettytable import PrettyTable
 
 
 def log_metrics(
-    writer: SummaryWriter, metrics: dict, epoch_number: int, phase: str = "Validation"
+    writer: SummaryWriter, metrics: dict, step_number: int, phase: str = "Validation"
 ):
     """
     Logs each metric in the dictionary to TensorBoard.
@@ -16,12 +17,25 @@ def log_metrics(
     Parameters:
     - writer: The SummaryWriter instance.
     - metrics: Dictionary of metric name and value pairs.
-    - epoch_number: The current epoch number.
+    - step_number: The current step number.
     - phase: 'Validation' or 'Training', used to distinguish metrics in TensorBoard.
     """
     for metric_name, value in metrics.items():
-        writer.add_scalar(f"{phase}/{metric_name}", value, epoch_number)
+        writer.add_scalar(f"{phase}/{metric_name}", value, step_number)
 
+def log_loss(
+    writer: SummaryWriter, loss_value: float, step_number: int, phase: str = "Validation"
+):
+    """
+    Logs loss value to TensorBoard.
+
+    Parameters:
+    - writer: The SummaryWriter instance.
+    - loss_value: current loss value
+    - step_number: The current step number.
+    - phase: 'Validation' or 'Training', used to distinguish metrics in TensorBoard.
+    """
+    writer.add(f"{phase}/Loss", loss_value, step_number, phase)
 
 def log_images_to_tensorboard(
     model: torch.nn.Module,
@@ -75,9 +89,6 @@ def load_model(model, ckpt_path):
     state = torch.load(ckpt_path)
     model.load_state_dict(state)
     return model
-
-
-from prettytable import PrettyTable
 
 
 def display_metrics(metrics, phase):

@@ -15,6 +15,7 @@ import os
 from typing import List, Callable, Dict, Optional, Tuple
 from .utils import (
     log_metrics,
+    log_loss,
     log_images_to_tensorboard,
     save_model,
     load_model,
@@ -22,6 +23,9 @@ from .utils import (
 )
 import time
 import numpy as np
+import math
+
+from tqdm import tqdm 
 
 # from custom metrics and losses
 from metrics import get_stats
@@ -35,7 +39,7 @@ print(f"Metric computations is based on {mode} mode")
 is_mixed_precision = False
 debug = False
 print(f"Mixed Precision Training : {is_mixed_precision}")
-training_log_interval = 10  # number of step between 2 training logs (avoid too much data transfer and metric computations)
+training_log_interval = 5  # number of step between 2 training logs (avoid too much data transfer and metric computations)
 num_classes = 2
 scaler = GradScaler(device=device)
 
@@ -48,14 +52,14 @@ def training_step(
     step_number: int,
     image_key="image"
 ):
-    x = batch[image_key].to(torch.float16 if is_mixed_precision else torch.float32)
-    y = batch["mask"].to(torch.float16 if is_mixed_precision else torch.float32)
+    x = batch[image_key] #float32
+    y = batch["mask"] # long
 
     loss = 0.0
 
     if device == "cuda":
-        x = x.to(device, non_blocking=True)
-        y = y.to(device, non_blocking=True)
+        x = x.to(device, non_blocking=True, dtype=torch.float32)
+        y = y.to(device, non_blocking=True, dtype=torch.int64)
 
     optimizer.zero_grad()
 
@@ -81,13 +85,13 @@ def training_step(
 
     loss = loss.item()
     metrics_step = {}
-    if step_number % training_log_interval == 0:
+    if step_number % training_log_interval == 1:
         # Calculate each metric and accumulate the total
         # Output format from (B,N,H,W) => (B,H,W)
-        out = outputs.long().argmax(dim=1)
+        out = outputs.argmax(dim=1).long()
         # Compute the Confusion matrix
         tp, fp, fn, tn = get_stats(
-            output=out, target=y.long(), mode=mode, num_classes=num_classes
+            output=out, target=y, mode=mode, num_classes=num_classes
         )
         for metric in metrics:
             metric_name = metric.__name__
@@ -101,17 +105,16 @@ def training_step(
 
 def validation_step(model, batch, loss_fn, metrics, image_key="image"):
 
-    x = batch[image_key].to(torch.float16 if is_mixed_precision else torch.float32)
-    y = batch["mask"].to(torch.float16 if is_mixed_precision else torch.float32)
+    x = batch[image_key]
+    y = batch["mask"]
 
     if device == "cuda":
-        x = x.to(device, non_blocking=True)
-        y = y.to(device, non_blocking=True)
+        x = x.to(device, non_blocking=True, dtype=torch.float32)
+        y = y.to(device, non_blocking=True, dtype=torch.int64)
 
     with torch.no_grad():
         if is_mixed_precision:
             with autocast(device_type=device, dtype=torch.float16):
-                # Forward pass
                 outputs = model(x)
                 vloss = loss_fn(outputs, y)
         else:
@@ -124,10 +127,10 @@ def validation_step(model, batch, loss_fn, metrics, image_key="image"):
 
     # mode="multiclass"
     # Output format from (B,N,H,W) => (B,H,W)
-    out = outputs.long().argmax(dim=1)
+    out = outputs.argmax(dim=1).long()
     # Compute the Confusion matrix
     tp, fp, fn, tn = get_stats(
-        output=out, target=y.long(), mode=mode, num_classes=num_classes
+        output=out, target=y, mode=mode, num_classes=num_classes
     )
     for metric in metrics:
         metric_name = metric.__name__
@@ -156,31 +159,42 @@ def training_epoch(
     total_metrics = {metric.__name__: 0.0 for metric in metrics}
     interval_samples = 0
 
-    for step, batch in enumerate(train_dl):
-        loss_t, metrics_step = training_step(
-            model=model,
-            batch=batch,
-            loss_fn=loss_fn,
-            metrics=metrics,
-            optimizer=optimizer,
-            step_number=step,
-            image_key=image_key
-        )
-        # Accumulate loss
-        batch_size = batch["image"].size(0)
-        running_loss += loss_t * batch_size
-        # accumulate training metrics
-        if step % training_log_interval == 0:
-            interval_samples += batch_size
-            for metric_name in total_metrics.keys():
-                total_metrics[metric_name] += metrics_step[metric_name] * batch_size
+    steps_per_epoch = math.ceil(len(train_dl.dataset) / train_dl.batch_size)
+    step=0
+
+    with tqdm(train_dl, desc=f"Epoch {epoch_number + 1}", unit="batch") as t:
+        for batch in t:
+            
+            loss_t, metrics_step = training_step(
+                model=model,
+                batch=batch,
+                loss_fn=loss_fn,
+                metrics=metrics,
+                optimizer=optimizer,
+                step_number=step,
+                image_key=image_key
+                )
+            # Accumulate loss
+            batch_size = batch[image_key].size(0)
+            running_loss += loss_t * batch_size
+
+            # accumulate training metrics and log intermediate metrics and loss
+            if step % training_log_interval == 1:
+                interval_samples += batch_size
+                for metric_name in total_metrics.keys():
+                    total_metrics[metric_name] += metrics_step[metric_name] * batch_size
+                # log intermediate metrics
+                step_metrics = {name: value / interval_samples for name, value in total_metrics.items()}
+                log_metrics(writer, metrics=step_metrics, step_number=(epoch_number * steps_per_epoch + step), phase="Training")
+                # log intermediare loss
+                log_loss(writer, loss_value=running_loss/(step*batch_size),step_number=(epoch_number * steps_per_epoch + step), phase="Training")
+            step += 1
 
     # Calculate and return epoch loss
     epoch_loss = running_loss / len(train_dl.dataset)
-
     # Calculate and return epoch metric training average
     total_metrics = {
-        name: value / interval_samples for name, value in total_metrics.items()
+        name: value / len(train_dl.dataset) for name, value in total_metrics.items()
     }
     if verbose:
         print(f"Epoch {epoch_number + 1} Training completed. Loss: {epoch_loss:.4f}")
@@ -193,35 +207,44 @@ def validation_epoch(
     valid_dl: DataLoader,
     loss_fn: nn.Module,
     epoch_number: int,
+    writer: SummaryWriter,
     metrics: List[Callable] = [],
-    image_key: str = "image"
+    image_key: str = "image",
 ) -> Tuple[int, Dict[str, float]]:
 
     running_loss = 0.0
-
-    metric_totals = {
+    interval_samples = 0
+    total_metrics = {
         metric.__name__: 0 for metric in metrics
     }  # Initialize totals for each metric
+    steps_per_epoch = math.ceil(len(valid_dl.dataset) / valid_dl.batch_size)
 
     model.eval()  # Set model to evaluation mode
+    step=0
+    with tqdm(valid_dl, desc=f"Validation Epoch {epoch_number + 1}", unit="batch") as t:
+        for batch in t:
+            batch_size = batch[image_key].size(0)
+            vloss, metrics_step = validation_step(model, batch, loss_fn=loss_fn, metrics=metrics, image_key=image_key)
+            # Accumulate validation loss
+            running_loss += vloss * batch_size
 
-    for step, batch in enumerate(valid_dl):
-        batch_size = batch[image_key].size(0)
-        vloss, metrics_step = validation_step(
-            model, batch, loss_fn=loss_fn, metrics=metrics, image_key=image_key
-        )
-        # Accumulate validation loss
-        running_loss += vloss * batch_size
-        # Accumulate metrics
-        for metric in metrics:
-            metric_totals[metric.__name__] += metrics_step[metric.__name__] * batch_size
+            # accumulate Validation  metrics and log intermediate metrics and loss
+            if step % training_log_interval == 1:
+                print(batch_size)
+                interval_samples += batch_size
+
+                for metric_name in total_metrics.keys():
+                    total_metrics[metric_name] += metrics_step[metric_name] * batch_size
+                # log intermediate metrics
+                step_metrics = {name: value / interval_samples for name, value in total_metrics.items()}
+                log_metrics(writer, metrics=step_metrics, step_number=(epoch_number * steps_per_epoch + step), phase="Validation")
+                # log intermediare loss
+                log_loss(writer, loss_value=running_loss/(step*batch_size),step_number=(epoch_number * steps_per_epoch + step), phase="Validation")
+            step+=1
 
     # Calculate average loss and metrics over the whole validation dataset
     epoch_vloss = running_loss / len(valid_dl.dataset)
-    epoch_metrics = {
-        name: total / len(valid_dl.dataset) for (name, total) in metric_totals.items()
-    }
-
+    epoch_metrics = {name: total / len(valid_dl.dataset) for (name, total) in total_metrics.items()}
     if verbose:
         print(f"Epoch {epoch_number + 1} Validation completed. Loss: {epoch_vloss:.4f}")
         display_metrics(metrics=epoch_metrics, phase="Validation")
@@ -292,8 +315,8 @@ def train(
         early_stopping_params["patience"],
         early_stopping_params["trigger_times"],
     )
-    max_images = 4
-    log_interval = 2
+    max_images = 5
+    log_interval = 1
 
     model.to(device)
 
@@ -318,6 +341,7 @@ def train(
                 valid_dl=valid_dl,
                 loss_fn=loss_fn,
                 metrics=metrics,
+                writer=writer,
                 epoch_number=epoch,
                 image_key=image_key
             )
@@ -326,9 +350,9 @@ def train(
             writer.add_scalar("learning rate", lr_scheduler.get_last_lr()[0], epoch + 1)
 
             if verbose:
-                print(f"LOSS train {epoch_loss} valid {epoch_vloss}")
+                print(f"Training Loss : {epoch_loss} / Validation : {epoch_vloss}")
 
-            # log training and validation losses
+            # log training and validation losses at an epoch frequence
             writer.add_scalars(
                 "Training vs. Validation Loss",
                 {"Training": epoch_loss, "Validation": epoch_vloss},
@@ -336,11 +360,14 @@ def train(
             )
 
             # log validation and training metrics
+            steps_per_epoch = math.ceil(len(valid_dl.dataset) / valid_dl.batch_size) # number of batchs 
+
+            step_number = (epoch + 1) * steps_per_epoch
             log_metrics(
-                writer, metrics=epoch_metrics, epoch_number=epoch, phase="training"
+                writer, metrics=epoch_metrics, step_number=step_number, phase="Training"
             )
             log_metrics(
-                writer, metrics=epoch_vmetrics, epoch_number=epoch, phase="validation"
+                writer, metrics=epoch_vmetrics, step_number=step_number, phase="Validation"
             )
 
             # log some sample images
