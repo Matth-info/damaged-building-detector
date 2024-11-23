@@ -39,7 +39,6 @@ def training_step(
     step_number: int,
     image_key: str = "image",
     device: str = "cuda",
-    training_log_interval: int = 10,
     is_mixed_precision: bool = False,
     scaler: torch.amp.GradScaler = None,
     mode: str = "multiclass",
@@ -59,7 +58,6 @@ def training_step(
         step_number (int): Current training step number.
         image_key (str): Key in the batch dictionary for the input image.
         device (str): The device to run the computation on ("cuda" or "cpu").
-        training_log_interval (int): Interval for logging metrics.
         is_mixed_precision (bool): Whether to use mixed precision.
         scaler (torch.cuda.amp.GradScaler): Gradient scaler for mixed precision.
         mode (str): Metric computation mode, e.g., "multiclass".
@@ -105,22 +103,22 @@ def training_step(
 
     # Compute metrics (only at intervals)
     metrics_step = {}
-    if step_number % training_log_interval == 0:
-        with torch.no_grad():
-            # Get predictions from model outputs
-            preds = outputs.argmax(dim=1).long()  # Shape: (B, H, W)
 
-            # Calculate statistics for metrics (e.g., confusion matrix components)
-            tp, fp, fn, tn = get_stats(
-                output=preds, target=y, mode=mode, num_classes=num_classes
+    with torch.no_grad():
+        # Get predictions from model outputs
+        preds = outputs.argmax(dim=1).long()  # Shape: (B, H, W)
+
+        # Calculate statistics for metrics (e.g., confusion matrix components)
+        tp, fp, fn, tn = get_stats(
+            output=preds, target=y, mode=mode, num_classes=num_classes
+        )
+
+        # Compute each metric
+        for metric in metrics:
+            metric_name = metric.__name__
+            metrics_step[metric_name] = metric(
+                tp, fp, fn, tn, class_weights=None, reduction=reduction
             )
-
-            # Compute each metric
-            for metric in metrics:
-                metric_name = metric.__name__
-                metrics_step[metric_name] = metric(
-                    tp, fp, fn, tn, class_weights=None, reduction=reduction
-                )
 
     return loss_value, metrics_step
 
@@ -136,6 +134,7 @@ def validation_step(
     mode: str = "multiclass",
     num_classes: int = 2,
     reduction: str = "micro-imagewise",
+    class_weights: List[float] = None
 ) -> Tuple[float, Dict[str, float]]:
     """
     Perform a single validation step on a batch of data.
@@ -187,13 +186,13 @@ def validation_step(
 
         # Compute confusion matrix components
         tp, fp, fn, tn = get_stats(
-            output=preds, target=y, mode=mode, num_classes=num_classes
+            output=preds, target=y, mode=mode, num_classes=num_classes,
         )
 
         # Calculate each metric
         for metric in metrics:
             metric_name = metric.__name__
-            metric_value = metric(tp, fp, fn, tn, class_weights=None, reduction=reduction)
+            metric_value = metric(tp, fp, fn, tn, class_weights=class_weights, reduction=reduction)
             metrics_step[metric_name] = metric_value
 
     return vloss_value, metrics_step
@@ -210,6 +209,7 @@ def training_epoch(
     image_key: str = "image",
     verbose: bool = True,
     training_log_interval: int = 10,
+    is_mixed_precision : bool = False
 ):
     """
     Perform one epoch of training.
@@ -256,7 +256,7 @@ def training_epoch(
                 step_number=step,
                 image_key=image_key,
                 scaler=GradScaler(),
-                is_mixed_precision=False,
+                is_mixed_precision=is_mixed_precision,
                 num_classes=2
             )
 
@@ -265,8 +265,9 @@ def training_epoch(
             running_loss += loss_t * batch_size
             interval_samples += batch_size
 
-            for metric_name in metrics_step.keys():
-                total_metrics[metric_name] += metrics_step[metric_name] * batch_size
+            for metric_name in total_metrics.keys():
+                if metric_name in metrics_step:
+                    total_metrics[metric_name] += metrics_step[metric_name] * batch_size
 
             # Log intermediate results at intervals
             if step % training_log_interval == 0 and writer:
@@ -312,10 +313,12 @@ def validation_epoch(
     loss_fn: nn.Module,
     epoch_number: int,
     writer: SummaryWriter,
-    metrics: List[Callable] = [],
+    metrics: List[Callable] = None,
     image_key: str = "image",
     verbose: bool = True,  # Adding verbose flag to control logging
-    training_log_interval: int = 10  # Define default interval for logging
+    training_log_interval: int = 10,  # Define default interval for logging,
+    is_mixed_precision: bool = False,
+    class_weights: List[float] = None
 ) -> Tuple[float, Dict[str, float]]:
     """
     Perform one epoch of validation.
@@ -356,20 +359,21 @@ def validation_epoch(
                 loss_fn=loss_fn,
                 metrics=metrics,
                 image_key=image_key,
-                num_classes=2
+                num_classes=2,
+                is_mixed_precision=is_mixed_precision,
+                class_weights=class_weights
             )
 
             # Accumulate validation loss
             running_loss += vloss * batch_size
+            interval_samples += batch_size
+
+            for metric_name in total_metrics.keys():
+                if metric_name in metrics_step:
+                    total_metrics[metric_name] += metrics_step[metric_name] * batch_size
 
             # Accumulate metrics at defined intervals
             if step % training_log_interval == 0:
-                interval_samples += batch_size
-
-                for metric_name in total_metrics.keys():
-                    if metric_name in metrics_step:
-                        total_metrics[metric_name] += metrics_step[metric_name] * batch_size
-
                 # Log intermediate metrics
                 step_metrics = {
                     name: value / max(1, interval_samples) for name, value in total_metrics.items()
@@ -423,7 +427,8 @@ def train(
     checkpoint_interval: int = 10,  # Add checkpoint interval parameter
     debug: bool = False,  # Add debug flag for memory logging, 
     device: str = "cuda" if torch.cuda.is_available() else "cpu",
-    training_log_interval: int = 1
+    training_log_interval: int = 1, 
+    is_mixed_precision: bool = False
 ):
 
     # Create a directory for the experiment
@@ -478,7 +483,8 @@ def train(
                 model=model, train_dl=train_dl, loss_fn=loss_fn, metrics=metrics, 
                 optimizer=optimizer_ft, scheduler=lr_scheduler,
                 epoch_number=epoch, writer=writer, image_key=image_key,
-                verbose=True, training_log_interval=training_log_interval
+                verbose=True, training_log_interval=training_log_interval,
+                is_mixed_precision=is_mixed_precision
             )
 
             # Validation phase
@@ -486,7 +492,8 @@ def train(
                 model=model, valid_dl=valid_dl, loss_fn=loss_fn, 
                 epoch_number=epoch, writer=writer, metrics=metrics,
                 image_key=image_key, verbose=True,
-                training_log_interval=training_log_interval
+                training_log_interval=training_log_interval,
+                is_mixed_precision=is_mixed_precision
             )
 
             # Scheduler step after training
@@ -545,3 +552,79 @@ def train(
 
         total_time = time.time() - overall_start_time
         logging.info(f"Total training time: {total_time:.2f} seconds")
+
+
+
+def testing(
+    model: nn.Module,
+    test_dataloader: DataLoader,
+    loss_fn: nn.Module,
+    metrics: List[Callable] = [],
+    image_key: str = "image",
+    verbose: bool = True,  # Adding verbose flag to control logging
+    training_log_interval: int = 10,  # Define default interval for logging,
+    is_mixed_precision: bool = False,
+    num_classes: int = 2,
+    reduction: str = "weighted",
+    class_weights: List[float] = None
+) -> Tuple[float, Dict[str, float]]:
+    """
+    Perform one epoch of validation.
+
+    Args:
+        model (nn.Module): The model to validate.
+        test_dataloader (DataLoader): The DataLoader for Testing data.
+        loss_fn (nn.Module): The loss function.
+        epoch_number (int): The current epoch number (0-indexed).
+        writer (SummaryWriter): TensorBoard writer for logging.
+        metrics (List[Callable]): A list of metrics to calculate during validation.
+        image_key (str): Key to access input images in the batch.
+        verbose (bool): Whether to log detailed information (default: True).
+        training_log_interval (int): Interval at which to log metrics.
+
+    Returns:
+        Tuple[float, Dict[str, float]]: Epoch validation loss and metric averages.
+    """
+    logging.info("Testing Phase")
+
+    model.eval()  # Set model to evaluation mode
+    running_loss = 0.0
+    interval_samples = 0
+    total_metrics = {metric.__name__: 0.0 for metric in metrics}  # Initialize totals
+
+    # Iterate through the validation dataset
+    with tqdm(test_dataloader, desc=f"Testing", unit="batch") as t:
+        for batch in t:
+            batch_size = batch[image_key].size(0)
+
+            # Perform a validation step
+            vloss, metrics_step = validation_step(
+                model=model,
+                batch=batch,
+                loss_fn=loss_fn,
+                metrics=metrics,
+                image_key=image_key,
+                num_classes=num_classes,
+                is_mixed_precision=is_mixed_precision,
+                reduction=reduction,
+                class_weights=class_weights
+            )
+
+            # Accumulate validation loss
+            running_loss += vloss * batch_size
+            interval_samples += batch_size
+
+            for metric_name in total_metrics.keys():
+                if metric_name in metrics_step:
+                    total_metrics[metric_name] += metrics_step[metric_name] * batch_size
+
+            # Update progress bar with running loss
+            t.set_postfix({"Loss": vloss})
+
+    # Calculate average loss and metrics for the entire validation dataset
+    epoch_vloss = running_loss / len(test_dataloader.dataset)
+    epoch_metrics = {
+        name: total / len(test_dataloader.dataset) for name, total in total_metrics.items()
+    }
+
+    return epoch_vloss, epoch_metrics
