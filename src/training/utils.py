@@ -38,7 +38,7 @@ def log_loss(
     writer.add_scalar(f"{phase}/Loss", loss_value, step_number)
 
 
-
+import random
 def log_images_to_tensorboard(
     model: torch.nn.Module,
     data_loader: DataLoader,
@@ -60,10 +60,14 @@ def log_images_to_tensorboard(
             predictions, dim=1
         )  # Reduce to (batch_size, Height, Width)
 
+    # Select a random subset of images
+    num_images = min(max_images, inputs.size(0))  # Ensure max_images doesn't exceed batch size
+    indices = random.sample(range(inputs.size(0)), num_images)  # Randomly select indices
+
     # Move data back to CPU for visualization and limit the number of images
-    inputs = inputs.cpu().float()[:max_images]
-    labels = labels.cpu().float()[:max_images]
-    predictions = predictions.cpu().float()[:max_images]
+    inputs = inputs.cpu().float()[indices]
+    labels = labels.cpu().float()[indices]
+    predictions = predictions.cpu().float()[indices]
 
     # Create grids for inputs, labels, and predictions
     input_grid = torchvision.utils.make_grid(inputs, normalize=True, scale_each=True)

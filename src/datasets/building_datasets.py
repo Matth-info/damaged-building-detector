@@ -559,14 +559,14 @@ class xDB_Damaged_Building(Dataset):
         # Apply transformations if defined
         if self.transform:
             # Compose image and mask into a single dict for joint transformation
-            image = np.float32(np.array(image)/255.0)
+            image = np.float32(np.array(image))/ 255.0 # Normalize to [0,1]
             transformed = self.transform(image=image, mask=mask)
-            image = transformed["image"]
-            mask = transformed["mask"]
+            image = transformed["image"].float() # image is converted into torch.float32
+            mask = transformed["mask"].long()  # mask is converted into torch.int64
         else:
             # Convert image and mask to tensors directly if no transform
             image = torch.from_numpy(np.array(image)).permute(2, 0, 1).float() / 255.0  # Normalize to [0, 1]
-            mask = torch.from_numpy(mask).long()
+            mask = torch.from_numpy(mask).long() # mask is converted into torch.int64
 
         return {"image": image, "mask": mask}
     
