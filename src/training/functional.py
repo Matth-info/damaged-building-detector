@@ -43,7 +43,8 @@ def training_step(
     scaler: torch.amp.GradScaler = None,
     mode: str = "multiclass",
     num_classes: int = 2,
-    reduction: str = "micro-imagewise",
+    reduction: str = "weighted",
+    class_weights: List[float] = [0.1,0.9],
     max_norm: float = 1.0,
 ) -> Tuple[float, Dict[str, float]]:
     """
@@ -117,7 +118,7 @@ def training_step(
         for metric in metrics:
             metric_name = metric.__name__
             metrics_step[metric_name] = metric(
-                tp, fp, fn, tn, class_weights=None, reduction=reduction
+                tp, fp, fn, tn, class_weights=class_weights, reduction=reduction
             )
 
     return loss_value, metrics_step
@@ -133,7 +134,7 @@ def validation_step(
     is_mixed_precision: bool = False,
     mode: str = "multiclass",
     num_classes: int = 2,
-    reduction: str = "micro-imagewise",
+    reduction: str = "weighted",
     class_weights: List[float] = None
 ) -> Tuple[float, Dict[str, float]]:
     """
@@ -209,7 +210,9 @@ def training_epoch(
     image_key: str = "image",
     verbose: bool = True,
     training_log_interval: int = 10,
-    is_mixed_precision : bool = False
+    is_mixed_precision : bool = False,
+    reduction: str = "weighted",
+    class_weights: List[float] = [0.1,0.9]
 ):
     """
     Perform one epoch of training.
@@ -257,7 +260,9 @@ def training_epoch(
                 image_key=image_key,
                 scaler=GradScaler(),
                 is_mixed_precision=is_mixed_precision,
-                num_classes=2
+                num_classes=2,
+                reduction=reduction,
+                class_weights=class_weights
             )
 
             # Update loss and metrics accumulators
@@ -318,7 +323,8 @@ def validation_epoch(
     verbose: bool = True,  # Adding verbose flag to control logging
     training_log_interval: int = 10,  # Define default interval for logging,
     is_mixed_precision: bool = False,
-    class_weights: List[float] = None
+    class_weights: List[float] = None,
+    reduction: str = "weighted"
 ) -> Tuple[float, Dict[str, float]]:
     """
     Perform one epoch of validation.
@@ -361,7 +367,8 @@ def validation_epoch(
                 image_key=image_key,
                 num_classes=2,
                 is_mixed_precision=is_mixed_precision,
-                class_weights=class_weights
+                class_weights=class_weights, 
+                reduction=reduction
             )
 
             # Accumulate validation loss
@@ -428,7 +435,9 @@ def train(
     debug: bool = False,  # Add debug flag for memory logging, 
     device: str = "cuda" if torch.cuda.is_available() else "cpu",
     training_log_interval: int = 1, 
-    is_mixed_precision: bool = False
+    is_mixed_precision: bool = False,
+    reduction: str = "weighted",
+    class_weights: List[float] = [0.1,0.9]
 ):
 
     # Create a directory for the experiment
@@ -483,17 +492,21 @@ def train(
                 model=model, train_dl=train_dl, loss_fn=loss_fn, metrics=metrics, 
                 optimizer=optimizer_ft, scheduler=lr_scheduler,
                 epoch_number=epoch, writer=writer, image_key=image_key,
-                verbose=True, training_log_interval=training_log_interval,
-                is_mixed_precision=is_mixed_precision
+                verbose=verbose, training_log_interval=training_log_interval,
+                is_mixed_precision=is_mixed_precision,
+                reduction=reduction,
+                class_weights=class_weights
             )
 
             # Validation phase
             epoch_vloss, epoch_vmetrics = validation_epoch(
                 model=model, valid_dl=valid_dl, loss_fn=loss_fn, 
                 epoch_number=epoch, writer=writer, metrics=metrics,
-                image_key=image_key, verbose=True,
+                image_key=image_key, verbose=verbose,
                 training_log_interval=training_log_interval,
-                is_mixed_precision=is_mixed_precision
+                is_mixed_precision=is_mixed_precision,
+                reduction=reduction,
+                class_weights=class_weights
             )
 
             # Scheduler step after training
