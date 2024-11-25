@@ -14,13 +14,48 @@ from torchvision.models import (
 def choose_resnet(model_name="resnet18", pretrained=True):
 
     if model_name=="resnet18":
-        return resnet18(weights=ResNet18_Weights.DEFAULT if pretrained else None)
+        filters = [64, 64, 128, 256, 512]
+        return filters, resnet18(weights=ResNet18_Weights.DEFAULT if pretrained else None)
     elif model_name=="resnet34":
-        return resnet34(weights=ResNet34_Weights.DEFAULT if pretrained else None)
+        filters = [64, 64, 128, 256, 512]
+        return filters,  resnet34(weights=ResNet34_Weights.DEFAULT if pretrained else None)
     elif model_name=="resnet50":
-        return resnet50(weights=ResNet50_Weights.DEFAULT if pretrained else None)
+        filters = [64, 256, 512, 1024, 2048] 
+        return filters , resnet50(weights=ResNet50_Weights.DEFAULT if pretrained else None)
     else:
         raise ModuleNotFoundError
+
+
+class DecoderBlock(nn.Module):
+    """
+    Decoder Block  
+    Source : https://github.com/TripleCoenzyme/ResNet50-Unet/blob/master/model.py
+    """
+    def __init__(self, in_channels, mid_channels, out_channels):
+        super().__init__()
+        self.in_channels = in_channels
+        self.mid_channels = mid_channels
+        self.out_channels = out_channels
+   
+        self.conv = nn.Conv2d(in_channels=in_channels, out_channels=mid_channels, kernel_size=3, stride=1, padding=1, bias=False)
+
+        self.norm1 = nn.BatchNorm2d(mid_channels)
+        self.relu1 = nn.ReLU(inplace=True)
+        self.upsample = nn.ConvTranspose2d(
+            in_channels=mid_channels, out_channels=out_channels,
+            kernel_size=3, stride=2, padding=1, output_padding=1, bias=False)
+      
+        self.norm2 = nn.BatchNorm2d(out_channels)
+        self.relu2 = nn.ReLU(inplace=True)
+
+    def forward(self, x):
+        x = self.conv(x)
+        x = self.norm1(x)
+        x = self.relu1(x)
+        x = self.upsample(x)
+        x = self.norm2(x)
+        x = self.relu2(x)
+        return x
 
 
 class ResNet_UNET(nn.Module):
@@ -32,71 +67,80 @@ class ResNet_UNET(nn.Module):
         pretrained=True,
         freeze_backbone=True,
     ):
-        #super(ResNet_UNET, self).__init__()
         super().__init__()
 
         # Modify first layer of ResNet34 to accept custom number of channels
-        base_model = choose_resnet(model_name=backbone_name, pretrained=pretrained)  # Change this line
+        filters, resnet = choose_resnet(model_name=backbone_name, pretrained=pretrained)  # Change this line
        
-        self.base_layers = list(base_model.children())
-        self.freeze_backbone(freeze_backbone)
-
-        # Define the Unet Head/Neck
-        self.layer0 = nn.Sequential(*self.base_layers[:3])  # size=(N, 64, x.H/2, x.W/2)
-        self.layer1 = nn.Sequential(*self.base_layers[3:5])  # size=(N, 64, x.H/4, x.W/4)
-        self.layer2 = self.base_layers[5]  # size=(N, 128, x.H/8, x.W/8)
-        self.layer3 = self.base_layers[6]  # size=(N, 256, x.H/16, x.W/16)
-        self.layer4 = self.base_layers[7]  # size=(N, 512, x.H/32, x.W/32)
-
-        self.upconv4 = self.expand_block(512, 256)
-        self.upconv3 = self.expand_block(256 * 2, 128)
-        self.upconv2 = self.expand_block(128 * 2, 64)
-        self.upconv1 = self.expand_block(64 * 2, 64)
-        self.upconv0 = self.expand_block(64 * 2, out_channels)
-
-    def forward(self, x):
-
-        # Contracting Path
-        layer0 = self.layer0(x)
-        layer1 = self.layer1(layer0)
-        layer2 = self.layer2(layer1)
-        layer3 = self.layer3(layer2)
-        layer4 = self.layer4(layer3)
-
-        # Expansive Path
-        upconv4 = self.upconv4(layer4)
-        upconv3 = self.upconv3(torch.cat([upconv4, layer3], 1))
-        upconv2 = self.upconv2(torch.cat([upconv3, layer2], 1))
-        upconv1 = self.upconv1(torch.cat([upconv2, layer1], 1))
-        upconv0 = self.upconv0(torch.cat([upconv1, layer0], 1))
-
-        return upconv0
-
-    def expand_block(self, in_channels, out_channels):
-        expand = nn.Sequential(
-            torch.nn.ConvTranspose2d(
-                in_channels,
-                out_channels,
-                kernel_size=3,
+        # Modify input channels if not 3
+        if in_channels != 3:
+            self.firstconv = nn.Conv2d(
+                in_channels=in_channels,
+                out_channels=64,
+                kernel_size=7,
                 stride=2,
-                padding=1,
-                output_padding=1,
-            ),
-            torch.nn.BatchNorm2d(out_channels),
-            torch.nn.ReLU(inplace=True),
-            torch.nn.Conv2d(
-                out_channels, out_channels, kernel_size=3, stride=1, padding=1
-            ),
-            torch.nn.BatchNorm2d(out_channels),
-            torch.nn.ReLU(inplace=True),
-        )
-        return expand
-
-    def freeze_backbone(self, freeze_backbone):
+                padding=3,
+                bias=False
+            )
+            resnet.conv1 = self.firstconv  # Replace original ResNet conv1
+        else:
+            self.firstconv = resnet.conv1
+        
+        self.firstbn = resnet.bn1
+        self.firstrelu = resnet.relu
+        self.firstmaxpool = resnet.maxpool
+        # Extract the 3 first Blocks from ResNet 
+        self.encoder1 = resnet.layer1 # 2 ResNet Basic Blocks : in (filter[0] -> filter[1])
+        self.encoder2 = resnet.layer2 # 2 Basic Blocks : (filter[1] -> filter[2])
+        self.encoder3 = resnet.layer3 # 2 Basic Blocks : (filter[2] -> filter[3])
+        
+        self.center = DecoderBlock(in_channels=filters[3], mid_channels=filters[3]*4, out_channels=filters[3])
+        
+        self.decoder1 = DecoderBlock(in_channels=filters[3]+filters[2], mid_channels=filters[2]*4, out_channels=filters[2])
+        self.decoder2 = DecoderBlock(in_channels=filters[2]+filters[1], mid_channels=filters[1]*4, out_channels=filters[1])
+        self.decoder3 = DecoderBlock(in_channels=filters[1]+filters[0], mid_channels=filters[0]*4, out_channels=filters[0])
+        
+        self.final = nn.Sequential(
+                nn.Conv2d(in_channels=filters[0], out_channels=32, kernel_size=3, padding=1),
+                nn.BatchNorm2d(32), 
+                nn.ReLU(inplace=True),
+                nn.Conv2d(in_channels=32, out_channels=out_channels, kernel_size=1),
+                nn.ReLU(inplace=True)
+                )
+        
         if freeze_backbone:
-            for layer in self.base_layers:
-                for param in layer.parameters():
-                    param.requires_grad = False
+            self.freeze_backbone(in_channels)
+
+    def freeze_backbone(self, in_channels):
+        """
+        Freezes the weights of the ResNet backbone layers to prevent them from updating during training.
+        """
+        list_layers = [self.firstbn, self.encoder1, self.encoder2, self.encoder3]
+        if in_channels == 3:
+            list_layers = [self.firstconv] + list_layers
+
+        for layer in list_layers:
+            for param in layer.parameters():
+                param.requires_grad = False
+
+    def forward(self, x): 
+        x = self.firstconv(x)
+        x = self.firstbn(x)
+        x = self.firstrelu(x) 
+
+        x_ = self.firstmaxpool(x)
+
+        e1 = self.encoder1(x_)
+        e2 = self.encoder2(e1)
+        e3 = self.encoder3(e2)
+
+        center = self.center(e3)
+
+        d2 = self.decoder1(torch.cat([center, e2], dim=1))
+        d3 = self.decoder2(torch.cat([d2, e1], dim=1))
+        d4 = self.decoder3(torch.cat([d3, x], dim=1))
+
+        return self.final(d4)
 
     @torch.no_grad()
     def predict(self, x):

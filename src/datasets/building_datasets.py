@@ -16,6 +16,7 @@ import glob
 import csv 
 from tqdm import tqdm
 import json
+import numpy as np
 
 class Puerto_Rico_Building_Dataset(Dataset):
     def __init__(
@@ -474,10 +475,10 @@ class OpenCities_Building_Dataset(Dataset):
 
 # Color codes for polygons
 damage_dict = {
-    "no-damage": (0, 255, 0, 50), #Green
-    "minor-damage": (0, 0, 255, 50), #Blue
-    "major-damage": (255, 69, 0, 50), #Red-Green
-    "destroyed": (255, 0, 0, 50), #Red
+    "no-damage": (0, 255, 0, 50), # Green
+    "minor-damage": (0, 0, 255, 50), # Blue
+    "major-damage": (255, 69, 0, 50), # Red-Green
+    "destroyed": (255, 0, 0, 50), # Red
     "un-classified": (255, 255, 255, 50)
 }
 
@@ -489,12 +490,13 @@ class xDB_Damaged_Building(Dataset):
                  transform: Optional[A.Compose] = None,
                  type: str = "train",
                  val_ratio=0.1, 
-                 test_ratio=0.1
+                 test_ratio=0.1, 
+                 seed: int = 42
                  ):
         
         assert type in ["train", "val", "test"], "Dataset must be 'train','val' or 'test'"
         self.type = type
-
+        np.random.seed(seed=seed)
         self.label_dir = Path(origin_dir) / "labels"
         assert mode in ["building", "damage"], "Mode must be 'building' or 'damage'."
         self.mode = mode 
