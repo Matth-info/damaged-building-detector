@@ -21,6 +21,10 @@ from .utils import (
     load_model,
     display_metrics,
 )
+
+from .augmentations import augmentation_test_time
+import albumentations as A
+
 import time
 import numpy as np
 import math
@@ -135,7 +139,8 @@ def validation_step(
     mode: str = "multiclass",
     num_classes: int = 2,
     reduction: str = "weighted",
-    class_weights: List[float] = None
+    class_weights: List[float] = None, 
+    tta: bool = False 
 ) -> Tuple[float, Dict[str, float]]:
     """
     Perform a single validation step on a batch of data.
@@ -168,10 +173,35 @@ def validation_step(
         # Mixed precision support
         if is_mixed_precision:
             with autocast(device_type=device, dtype=torch.float16):
-                outputs = model(x)
+                if tta:
+                    outputs = augmentation_test_time(
+                        model=model, 
+                        images=x, 
+                        list_augmentations=[
+                                            A.HorizontalFlip(p=1.0),  # Horizontal flip
+                                            A.VerticalFlip(p=1.0)    # Vertical flip
+                                        ],
+                        aggregation="mean", 
+                        device=device
+                    )
+                else:
+                    outputs = model(x)
                 vloss = loss_fn(outputs, y)
         else:
-            outputs = model(x)
+            if tta:
+                outputs = augmentation_test_time(
+                    model=model, 
+                    images=x, 
+                    list_augmentations=[
+                                        A.HorizontalFlip(p=1.0),  # Horizontal flip
+                                        A.VerticalFlip(p=1.0)    # Vertical flip
+                                    ],
+                    aggregation="mean", 
+                    device=device
+                )
+            else: 
+                outputs = model(x)
+
             vloss = loss_fn(outputs, y)
 
     # Extract scalar loss value
@@ -210,9 +240,9 @@ def training_epoch(
     image_key: str = "image",
     verbose: bool = True,
     training_log_interval: int = 10,
-    is_mixed_precision : bool = False,
+    is_mixed_precision: bool = False,
     reduction: str = "weighted",
-    class_weights: List[float] = [0.1,0.9]
+    class_weights: List[float] = [0.1, 0.9]
 ):
     """
     Perform one epoch of training.
@@ -324,7 +354,8 @@ def validation_epoch(
     training_log_interval: int = 10,  # Define default interval for logging,
     is_mixed_precision: bool = False,
     class_weights: List[float] = None,
-    reduction: str = "weighted"
+    reduction: str = "weighted",
+    tta:bool = False
 ) -> Tuple[float, Dict[str, float]]:
     """
     Perform one epoch of validation.
@@ -368,7 +399,8 @@ def validation_epoch(
                 num_classes=2,
                 is_mixed_precision=is_mixed_precision,
                 class_weights=class_weights, 
-                reduction=reduction
+                reduction=reduction,
+                tta=tta
             )
 
             # Accumulate validation loss
@@ -437,7 +469,7 @@ def train(
     training_log_interval: int = 1, 
     is_mixed_precision: bool = False,
     reduction: str = "weighted",
-    class_weights: List[float] = [0.1,0.9]
+    class_weights: List[float] = [0.1, 0.9]
 ):
 
     # Create a directory for the experiment
@@ -575,11 +607,11 @@ def testing(
     metrics: List[Callable] = [],
     image_key: str = "image",
     verbose: bool = True,  # Adding verbose flag to control logging
-    training_log_interval: int = 10,  # Define default interval for logging,
     is_mixed_precision: bool = False,
     num_classes: int = 2,
     reduction: str = "weighted",
-    class_weights: List[float] = None
+    class_weights: List[float] = None, 
+    tta: bool = True
 ) -> Tuple[float, Dict[str, float]]:
     """
     Perform one epoch of validation.
@@ -611,7 +643,7 @@ def testing(
             batch_size = batch[image_key].size(0)
 
             # Perform a validation step
-            vloss, metrics_step = validation_step(
+            tloss, metrics_step = validation_step(
                 model=model,
                 batch=batch,
                 loss_fn=loss_fn,
@@ -620,11 +652,12 @@ def testing(
                 num_classes=num_classes,
                 is_mixed_precision=is_mixed_precision,
                 reduction=reduction,
-                class_weights=class_weights
+                class_weights=class_weights,
+                tta=tta
             )
 
             # Accumulate validation loss
-            running_loss += vloss * batch_size
+            running_loss += tloss * batch_size
             interval_samples += batch_size
 
             for metric_name in total_metrics.keys():
@@ -632,12 +665,12 @@ def testing(
                     total_metrics[metric_name] += metrics_step[metric_name] * batch_size
 
             # Update progress bar with running loss
-            t.set_postfix({"Loss": vloss})
+            t.set_postfix({"Loss": tloss})
 
     # Calculate average loss and metrics for the entire validation dataset
-    epoch_vloss = running_loss / len(test_dataloader.dataset)
-    epoch_metrics = {
+    epoch_tloss = running_loss / len(test_dataloader.dataset)
+    test_metrics = {
         name: total / len(test_dataloader.dataset) for name, total in total_metrics.items()
     }
 
-    return epoch_vloss, epoch_metrics
+    return epoch_tloss, test_metrics
