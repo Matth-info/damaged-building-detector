@@ -27,4 +27,3 @@ def custom_collate_fn(batch):
 
     # Return images and list of targets
     return images, targets
-

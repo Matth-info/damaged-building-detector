@@ -8,6 +8,7 @@ from .soft_bce import SoftBCEWithLogitsLoss
 from .soft_ce import SoftCrossEntropyLoss
 from .tversky import TverskyLoss
 from .mcc import MCCLoss
+from .ensemble import Ensemble
 
 __all__ = [
     "BINARY_MODE",
@@ -21,4 +22,5 @@ __all__ = [
     "SoftCrossEntropyLoss",
     "TverskyLoss",
     "MCCLoss",
+    "Ensemble"
 ]

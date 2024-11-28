@@ -21,8 +21,6 @@ from shapely import wkt
 from matplotlib.patches import Rectangle
 import matplotlib.pyplot as plt
 
-
-
 ### Datasets used for Instance Segmentation Task (not Semantic Segmentation Task)
 
 class xDB_Instance_Building(Dataset):
@@ -34,6 +32,7 @@ class xDB_Instance_Building(Dataset):
                  type: str = "train",
                  val_ratio: float = 0.1, 
                  test_ratio: float = 0.1,
+                 task: str = "instance",
                  seed: int = 42):
         """
         Dataset for instance segmentation tasks with building or damage masks.
@@ -46,10 +45,12 @@ class xDB_Instance_Building(Dataset):
         - type: "train", "val", or "test" to determine the dataset split.
         - val_ratio: Fraction of the dataset to use for validation.
         - test_ratio: Fraction of the dataset to use for testing.
+        - mode : "instance" or "semantic" 
         - seed: Random seed for reproducibility.
         """
         assert type in ["train", "val", "test"], "Dataset type must be 'train', 'val', or 'test'."
         assert mode in ["building", "damage"], "Mode must be 'building' or 'damage'."
+        assert task in ["instance","semantic"], "Task feature must be 'instance' or 'semantic'" 
 
         self.type = type
         self.mode = mode
@@ -63,6 +64,7 @@ class xDB_Instance_Building(Dataset):
 
         np.random.seed(seed)  # Ensure reproducibility
         self._split()  # Perform train/val/test split
+        self.task = task 
 
     def _split(self):
         """Splits the dataset into train, validation, and test sets."""
@@ -128,7 +130,7 @@ class xDB_Instance_Building(Dataset):
         masks = torch.from_numpy(mask).unsqueeze(0) == torch.arange(1, num_objs, dtype=torch.uint8).view(-1, 1, 1)
         masks = masks.any(dim=0)
         """
-        if len(obj_ids)> 0:
+        if len(obj_ids) > 0:
             # split the color-encoded mask into a set
             # of binary masks
             masks = torch.from_numpy((mask == obj_ids[:, None, None])).to(dtype=torch.uint8)
@@ -145,48 +147,58 @@ class xDB_Instance_Building(Dataset):
         img = tv_tensors.Image(image)
 
         # Create the target dictionary
-        target = {
-            "boxes": tv_tensors.BoundingBoxes(boxes, format="XYXY", canvas_size=(H,W)),
-            "masks": tv_tensors.Mask(masks),
-            "labels": labels,
-            "image_id": idx
-        }
+        if self.task == "instance":
+            target = {
+                "boxes": tv_tensors.BoundingBoxes(boxes, format="XYXY", canvas_size=(H, W)),
+                "masks": tv_tensors.Mask(masks),
+                "labels": labels,
+                "image_id": idx,
+            }
+        elif self.task == "semantic":
+
+            target = {
+                "boxes": tv_tensors.BoundingBoxes(boxes, format="XYXY", canvas_size=(H, W)),
+                "masks": tv_tensors.Mask(binary_mask),
+                "labels": labels,
+                "image_id": idx,
+            }
+        target = self._filter_invalid_boxes(target, width=W, height=H)
 
         # Apply transformations if provided
         if self.transform is not None:
             img, target = self.transform(img, target)
 
-        return img, self._filter_invalid_boxes(target, width=W, height=H)
+        return img, target
 
     def __len__(self) -> int:
         """Returns the total number of samples in the dataset."""
         return len(self.list_labels)
     
     def _filter_invalid_boxes(self, target, width=512, height=512):
-        boxes = target['boxes']
-        masks = target['masks']
-        labels = target['labels']
 
-        # Keep boxes where x_max > x_min and y_max > y_min
-        valid_boxes, valid_masks, valid_labels = [], [], []
+        if self.task == "instance":
+                
+            boxes = target['boxes']
+            masks = target['masks']
+            labels = target['labels']
 
-        for box, mask, label in zip(boxes, masks, labels):
-            if box[2] > box[0] and box[3] > box[1]:  # Ensure valid dimensions
-                valid_boxes.append(box.tolist())  # Convert to list explicitly
-                valid_masks.append(mask.tolist() if isinstance(mask, torch.Tensor) else mask)
-                valid_labels.append(label)
+            # Keep boxes where x_max > x_min and y_max > y_min
+            valid_boxes, valid_masks, valid_labels = [], [], []
 
-        if len(valid_boxes) == 0:
-            
-            target['boxes'] = torch.zeros((0, 4), dtype=torch.float32)
-            target['labels'] = torch.zeros((0,), dtype=torch.int64)
-            target['masks'] = torch.zeros((0, height, width), dtype=torch.uint8)
-        
-        else:
+            for box, mask, label in zip(boxes, masks, labels):
+                if box[2] > box[0] and box[3] > box[1]:  # Ensure valid dimensions
+                    valid_boxes.append(box.tolist())  # Convert to list explicitly
+                    valid_masks.append(mask.tolist() if isinstance(mask, torch.Tensor) else mask)
+                    valid_labels.append(label)
 
-            target['boxes'] = torch.tensor(valid_boxes, dtype=torch.float32)
-            target['masks'] = torch.tensor(valid_masks, dtype=torch.float32)  # Ensure masks have appropriate dtype
-            target['labels'] = torch.tensor(valid_labels, dtype=torch.long)  # Labels are typically integers
+            if len(valid_boxes) == 0:
+                target['boxes'] = torch.zeros((0, 4), dtype=torch.float32)
+                target['labels'] = torch.zeros((0,), dtype=torch.int64)
+                target['masks'] = torch.zeros((0, height, width), dtype=torch.uint8)
+            else:
+                target['boxes'] = torch.tensor(valid_boxes, dtype=torch.float32)
+                target['masks'] = torch.tensor(valid_masks, dtype=torch.float32)  # Ensure masks have appropriate dtype
+                target['labels'] = torch.tensor(valid_labels, dtype=torch.long)  # Labels are typically integers
 
         return target
 
@@ -280,8 +292,6 @@ class xDB_Instance_Building(Dataset):
         # Convert mask to numpy array
         return np.array(mask)
         
-   
-
     def display_sample(self, idx: int):
         """
         Displays an image with its segmentation masks, bounding boxes, and labels.

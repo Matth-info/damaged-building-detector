@@ -134,6 +134,7 @@ def validation_step(
     loss_fn: _Loss,
     metrics: List[Callable],
     image_key: str = "image",
+    mask_key: str = "mask",
     device: str = "cuda",
     is_mixed_precision: bool = False,
     mode: str = "multiclass",
@@ -162,7 +163,7 @@ def validation_step(
     """
     # Extract inputs and targets from the batch
     x = batch[image_key]  # e.g., FloatTensor (B, C, H, W)
-    y = batch["mask"]     # e.g., LongTensor (B, H, W)
+    y = batch[mask_key]     # e.g., LongTensor (B, H, W)
 
     # Move data to the specified device
     x = x.to(device, non_blocking=True, dtype=torch.float32)
@@ -212,8 +213,12 @@ def validation_step(
 
     # Compute predictions and metrics
     with torch.no_grad():
-        # Get predictions: Output shape from (B, N, H, W) => (B, H, W)
-        preds = outputs.argmax(dim=1).long()
+        # Get predictions: Output shape from (B, C, H, W) => (B, H, W)
+        if len(outputs.shape) == 4: 
+            preds = outputs.argmax(dim=1).long()
+        
+        if len(outputs.shape) == 3:
+            preds = outputs.long()
 
         # Compute confusion matrix components
         tp, fp, fn, tn = get_stats(
@@ -471,7 +476,6 @@ def train(
     reduction: str = "weighted",
     class_weights: List[float] = [0.1, 0.9]
 ):
-
     # Create a directory for the experiment
     timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
     log_dir = os.path.join(log_dir, f"{experiment_name}_{timestamp}")
@@ -606,6 +610,7 @@ def testing(
     loss_fn: nn.Module,
     metrics: List[Callable] = [],
     image_key: str = "image",
+    mask_key: str = "mask", 
     verbose: bool = True,  # Adding verbose flag to control logging
     is_mixed_precision: bool = False,
     num_classes: int = 2,
@@ -632,7 +637,10 @@ def testing(
     """
     logging.info("Testing Phase")
 
-    model.eval()  # Set model to evaluation mode
+    # Set model to evaluation mode
+    if isinstance(model, nn.Module):
+        model.eval()
+
     running_loss = 0.0
     interval_samples = 0
     total_metrics = {metric.__name__: 0.0 for metric in metrics}  # Initialize totals
@@ -649,6 +657,7 @@ def testing(
                 loss_fn=loss_fn,
                 metrics=metrics,
                 image_key=image_key,
+                mask_key=mask_key,
                 num_classes=num_classes,
                 is_mixed_precision=is_mixed_precision,
                 reduction=reduction,
