@@ -3,9 +3,8 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
-from torch.utils.data import Dataset, DataLoader
+from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
-from torchsummary import summary
 from torch.amp import autocast, GradScaler
 from torch.nn.modules.loss import _Loss
 
@@ -48,7 +47,7 @@ def training_step(
     mode: str = "multiclass",
     num_classes: int = 2,
     reduction: str = "weighted",
-    class_weights: List[float] = [0.1,0.9],
+    class_weights: List[float] = [0.1, 0.9],
     max_norm: float = 1.0,
 ) -> Tuple[float, Dict[str, float]]:
     """

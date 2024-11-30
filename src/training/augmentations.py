@@ -6,6 +6,10 @@ import numpy as np
 
 ### Augmentation Test Time
 
+__all__ = ["augmentation_test_time",
+            'get_train_augmentation_pipeline',
+            'get_val_augmentation_pipeline']
+
 def reverse_augmentation(predictions, augmentation):
     """
     Reverse specific augmentations applied to images to make predictions compatible.
@@ -80,7 +84,7 @@ def get_train_augmentation_pipeline(image_size=(512, 512), max_pixel_value=255):
         # Resize images and masks
         A.Resize(image_size[0], image_size[1], p=1.0),  # Ensure both image and mask are resized
         # Normalize images
-        A.Normalize(mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225), max_pixel_value=max_pixel_value, p=1.0),
+        A.Normalize(mean=(0.349, 0.354, 0.268), std=(0.114, 0.102, 0.094), max_pixel_value=max_pixel_value, p=1.0),
         # Random horizontal flip
         A.HorizontalFlip(p=0.5),
         # Random vertical flip
@@ -93,10 +97,6 @@ def get_train_augmentation_pipeline(image_size=(512, 512), max_pixel_value=255):
         A.RandomSizedCrop(min_max_height=(image_size[0], image_size[1]), height=image_size[0], width=image_size[1], p=0.2),
         # Random brightness and contrast adjustments
         A.RandomBrightnessContrast(p=0.2),
-        # Random contrast adjustment
-        A.RandomGamma(p=0.2),
-        # Random blur
-        A.GaussianBlur(p=0.2),
         # Random saturation adjustment
         A.HueSaturationValue(hue_shift_limit=20, sat_shift_limit=30, val_shift_limit=20, p=0.2),
         # Convert to tensor (works for both image and mask)
@@ -108,8 +108,9 @@ def get_val_augmentation_pipeline(image_size=(512, 512), max_pixel_value=255):
     transform = A.Compose([
         # Resize images and masks
         A.Resize(image_size[0], image_size[1], p=1.0),  # Ensure both image and mask are resized
-        A.Normalize(mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225), max_pixel_value=max_pixel_value, p=1.0),
+        A.Normalize(mean=(0.349, 0.354, 0.268), std=(0.114, 0.102, 0.094), max_pixel_value=max_pixel_value, p=1.0),
         ToTensorV2()
     ])
     return transform
 
+# xDB Tier3 Mean: [0.34944121 0.35439991 0.26813794], Std: [0.11447578 0.10222107 0.09438808]
