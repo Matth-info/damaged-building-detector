@@ -72,3 +72,44 @@ def augmentation_test_time(model: nn.Module, images , list_augmentations, aggreg
             raise ValueError(f"Unsupported aggregation method: {aggregation}")
 
         return torch.from_numpy(aggregated).to(device)
+    
+
+# Define the transformation pipeline
+def get_train_augmentation_pipeline(image_size=(512, 512), max_pixel_value=255):
+    transform = A.Compose([
+        # Resize images and masks
+        A.Resize(image_size[0], image_size[1], p=1.0),  # Ensure both image and mask are resized
+        # Normalize images
+        A.Normalize(mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225), max_pixel_value=max_pixel_value, p=1.0),
+        # Random horizontal flip
+        A.HorizontalFlip(p=0.5),
+        # Random vertical flip
+        A.VerticalFlip(p=0.5),
+        # Random rotation
+        A.RandomRotate90(p=0.5),
+        # Switch x and y axis 
+        A.Transpose(p=0.5), 
+        # Random scale and aspect ratio change
+        A.RandomSizedCrop(min_max_height=(image_size[0], image_size[1]), height=image_size[0], width=image_size[1], p=0.2),
+        # Random brightness and contrast adjustments
+        A.RandomBrightnessContrast(p=0.2),
+        # Random contrast adjustment
+        A.RandomGamma(p=0.2),
+        # Random blur
+        A.GaussianBlur(p=0.2),
+        # Random saturation adjustment
+        A.HueSaturationValue(hue_shift_limit=20, sat_shift_limit=30, val_shift_limit=20, p=0.2),
+        # Convert to tensor (works for both image and mask)
+        ToTensorV2()
+    ])
+    return transform
+
+def get_val_augmentation_pipeline(image_size=(512, 512), max_pixel_value=255):
+    transform = A.Compose([
+        # Resize images and masks
+        A.Resize(image_size[0], image_size[1], p=1.0),  # Ensure both image and mask are resized
+        A.Normalize(mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225), max_pixel_value=max_pixel_value, p=1.0),
+        ToTensorV2()
+    ])
+    return transform
+
