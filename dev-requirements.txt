@@ -24,3 +24,4 @@ pyproj
 xarray
 xarray-spatial
 prettytable
+fire

@@ -1,5 +1,3 @@
-import sys
-import os
 import argparse
 
 import torch
@@ -36,14 +34,14 @@ def parse_args():
     parser.add_argument("--model_dir", type=str, default="../models", help="Directory for saving trained models.")
     parser.add_argument("--tta", action="store_true", help="Enable Test Time Augmentation (TTA).")
     parser.add_argument("--mixed_precision", action="store_true", help="Enable mixed-precision training.")
-    
+    parser.add_argument("--origin_dir", type=str, default="../data/xDB/tier3", help="Local path to xDB Dataset.")
     return parser.parse_args()
 
 
 if __name__ == '__main__':
     args = parse_args()
 
-    origin_dir = "../data/xDB/tier3"
+    origin_dir = args.origin_dir
 
     # Data Preparation
     data_train = xDB_Damaged_Building(
@@ -109,7 +107,7 @@ if __name__ == '__main__':
     metrics = [balanced_accuracy, f1_score, iou_score]
 
     # Early Stopping
-    early_stopping_params = {"patience": 3, "trigger_times": 0}
+    early_stopping_params = {"patience": 5, "trigger_times": 0}
 
     # Training
     torch.cuda.empty_cache()
@@ -159,3 +157,5 @@ if __name__ == '__main__':
 
     for name, value in test_metrics.items():
         print(f"{name} : {value.item()}")
+    
+    torch.cuda.empty_cache()

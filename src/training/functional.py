@@ -33,6 +33,9 @@ from tqdm import tqdm
 # from custom metrics and losses
 from metrics import get_stats
 
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+
 def training_step(
     model: nn.Module,
     batch: dict,
@@ -281,7 +284,7 @@ def training_epoch(
     step = 0
 
     # Training loop with progress bar
-    with tqdm(train_dl, desc=f"Epoch {epoch_number + 1}", unit="batch") as t:
+    with tqdm(train_dl, desc=f"Epoch {epoch_number + 1}", unit="batch", disable=True) as t:
         for batch in t:
             # Perform a single training step
             loss_t, metrics_step = training_step(
@@ -389,7 +392,7 @@ def validation_epoch(
     step = 0
 
     # Iterate through the validation dataset
-    with tqdm(valid_dl, desc=f"Validation Epoch {epoch_number + 1}", unit="batch") as t:
+    with tqdm(valid_dl, desc=f"Validation Epoch {epoch_number + 1}", unit="batch", disable=True) as t:
         for batch in t:
             batch_size = batch[image_key].size(0)
 
@@ -475,6 +478,8 @@ def train(
     reduction: str = "weighted",
     class_weights: List[float] = [0.1, 0.9]
 ):
+
+    
     # Create a directory for the experiment
     timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
     log_dir = os.path.join(log_dir, f"{experiment_name}_{timestamp}")
@@ -645,7 +650,7 @@ def testing(
     total_metrics = {metric.__name__: 0.0 for metric in metrics}  # Initialize totals
 
     # Iterate through the validation dataset
-    with tqdm(test_dataloader, desc=f"Testing", unit="batch") as t:
+    with tqdm(test_dataloader, desc=f"Testing", unit="batch", disable=True) as t:
         for batch in t:
             batch_size = batch[image_key].size(0)
 
