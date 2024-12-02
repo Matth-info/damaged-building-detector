@@ -8,7 +8,10 @@ import numpy as np
 
 __all__ = ["augmentation_test_time",
             'get_train_augmentation_pipeline',
-            'get_val_augmentation_pipeline']
+            'get_val_augmentation_pipeline', 
+            'get_train_autoencoder_augmentation_pipeline'
+            'get_val_autoencoder_augmentation_pipeline'
+            ]
 
 def reverse_augmentation(predictions, augmentation):
     """
@@ -78,7 +81,7 @@ def augmentation_test_time(model: nn.Module, images , list_augmentations, aggreg
         return torch.from_numpy(aggregated).to(device)
     
 
-# Define the transformation pipeline
+#### Building Segmentation Model Augmentation Pipeline #####
 def get_train_augmentation_pipeline(image_size=(512, 512), max_pixel_value=255):
     transform = A.Compose([
         # Resize images and masks
@@ -114,3 +117,29 @@ def get_val_augmentation_pipeline(image_size=(512, 512), max_pixel_value=255):
     return transform
 
 # xDB Tier3 Mean: [0.34944121 0.35439991 0.26813794], Std: [0.11447578 0.10222107 0.09438808]
+
+###### AutoEncoder Augmentation Pipeline #######
+def get_train_autoencoder_augmentation_pipeline(image_size=(512, 512)):
+    return A.Compose(
+        [
+            A.Resize(image_size[0], image_size[1]),
+            A.HorizontalFlip(p=0.5),  # Random horizontal flip with 50% probability
+            A.VerticalFlip(p=0.5),    # Random vertical flip with 50% probability
+            A.RandomRotate90(p=0.5),  # Random 90 degree rotation with 50% probability
+            A.ShiftScaleRotate(
+                shift_limit=0.1, scale_limit=0.1, rotate_limit=15, p=0.5, border_mode=0
+            ),  # Random shift, scale, and rotation with fill at borders
+            A.ColorJitter(brightness=0.2, contrast=0.2, saturation=0.2, hue=0.1, p=0.5),  # Adjust color properties
+            A.RandomBrightnessContrast(brightness_limit=0.3, contrast_limit=0.3, p=0.5),  # Adjust brightness and contrast
+            A.GaussianBlur(blur_limit=(3, 5), p=0.3),  # Apply a Gaussian blur
+            A.GaussNoise(var_limit=(10, 50), p=0.3),  # Add Gaussian noise
+            ToTensorV2(),  # Convert to PyTorch tensors
+        ], is_check_shapes=True
+        )
+def get_val_autoencoder_augmentation_pipeline(image_size=(512, 512)):
+    return  A.Compose(
+            [
+            A.Resize(image_size[0], image_size[1]),
+            ToTensorV2(),
+            ], is_check_shapes=True
+        )

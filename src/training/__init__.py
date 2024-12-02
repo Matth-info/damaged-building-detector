@@ -2,5 +2,5 @@
 from .functional import train, testing
 
 __all__ = ["train", 
-            "testing",
+        "testing",
 ]

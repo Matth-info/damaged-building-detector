@@ -3,23 +3,37 @@ import numpy as np
 from typing import List
 import torch
 from torchvision.utils import draw_bounding_boxes, draw_segmentation_masks
+import os
+import numpy as np
+import matplotlib.pyplot as plt
+import torch
 
 def unormalize_images(image, std=np.array([0.229, 0.224, 0.225]), mean=np.array([0.485, 0.456, 0.406])):
     return (image * std + mean).clip(0, 1)
 
-def display_semantic_predictions_batch(images, mask_predictions, mask_labels, normalized = True):
+def display_semantic_predictions_batch(images, 
+                                       mask_predictions,
+                                       mask_labels, 
+                                       normalized=None,
+                                       folder_path=None):
     """
     Displays a batch of images alongside their predicted masks and ground truth masks,
-    with images unnormalized using ImageNet mean and std.
-
+    and optionally saves the images in a folder.
+    
     Args:
         images (torch.Tensor or numpy.ndarray): Batch of input images, shape (N, C, H, W) or (N, H, W, C).
         mask_predictions (torch.Tensor or numpy.ndarray): Batch of predicted masks, shape (N, H, W) or (N, H, W, C).
         mask_labels (torch.Tensor or numpy.ndarray): Batch of ground truth masks, shape (N, H, W) or (N, H, W, C).
+        normalized (dict): Dictionary containing "mean" and "std" for unnormalization.
+        folder_path (str): Path to the folder where images will be saved. If None, images are not saved.
     """
-    # ImageNet mean and std for unnormalization
-    mean = np.array([0.485, 0.456, 0.406])
-    std = np.array([0.229, 0.224, 0.225])
+    
+    if normalized is None:
+        bool_normalized = False 
+    else:
+        bool_normalized = True 
+        mean = normalized.get("mean")
+        std = normalized.get("std")
 
     # Convert tensors to numpy arrays if needed
     if isinstance(images, torch.Tensor):
@@ -31,6 +45,10 @@ def display_semantic_predictions_batch(images, mask_predictions, mask_labels, no
     
     batch_size = images.shape[0]  # Number of images in the batch
 
+    # Create the folder if folder_path is provided
+    if folder_path is not None:
+        os.makedirs(folder_path, exist_ok=True)
+
     for i in range(batch_size):
         image = images[i]
         mask_prediction = mask_predictions[i]
@@ -39,7 +57,7 @@ def display_semantic_predictions_batch(images, mask_predictions, mask_labels, no
         # Handle channel-first images (C, H, W) and unnormalize
         if image.ndim == 3 and image.shape[0] == 3:  # RGB images
             image = np.transpose(image, (1, 2, 0))  # Convert to (H, W, C)
-            image = unormalize_images(image) if normalized else image # Unnormalize and clip to [0, 1]
+            image = unormalize_images(image, std, mean) if bool_normalized else image  # Unnormalize and clip to [0, 1]
         elif image.ndim == 3 and image.shape[0] == 1:  # Grayscale
             image = image[0]  # Remove channel dimension
 
@@ -65,6 +83,13 @@ def display_semantic_predictions_batch(images, mask_predictions, mask_labels, no
         plt.title("Ground Truth Mask")
         
         plt.tight_layout()
+
+        # Save the plot if folder_path is provided
+        if folder_path is not None:
+            file_path = os.path.join(folder_path, f"sample_{i + 1}.png")
+            plt.savefig(file_path)
+            print(f"Saved: {file_path}")
+        
         plt.show()
 
 def display_instance_predictions_batch(model, batch, device='cuda', score_threshold=0.6, max_images=5, display: List[str]=None):

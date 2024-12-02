@@ -1,7 +1,5 @@
 # Dataset folder keep track of the custom pytorch dataset that have been used to load, preprocess data according to the source dataset and the model specificity
-import os
 import torch
-import albumentations
 import albumentations as A
 from albumentations.pytorch import ToTensorV2
 import numpy as np
@@ -241,7 +239,7 @@ def add_paths(df: pd.DataFrame,
     return df[df["accessible"] == True][selected_columns]
 
 
-def prepare_cloud_segmentation_data(folder_path: str = "../data/Cloud_DrivenData/final/public", train_share: float = 0.8):
+def prepare_cloud_segmentation_data(folder_path: str = "../data/Cloud_DrivenData/final/public", train_share: float = 0.8, seed : int = 42):
     """
     Data processing function to create training and validation datasets
     from the DrivenData Cloud Segmentation Challenge dataset.
@@ -249,6 +247,7 @@ def prepare_cloud_segmentation_data(folder_path: str = "../data/Cloud_DrivenData
     Args:
         folder_path (str): Path to the main dataset directory. Defaults to "../data/Cloud_DrivenData/final/public".
         train_share (float): Proportion of data to use for training (0 < train_share < 1). Defaults to 0.8.
+        seed (int): Define the seed
 
     Returns:
         tuple: Four dataframes - train_x, train_y, val_x, val_y
@@ -260,6 +259,8 @@ def prepare_cloud_segmentation_data(folder_path: str = "../data/Cloud_DrivenData
     from pathlib import Path
     import pandas as pd
     import random
+
+    random.seed(seed)
 
     # Set up paths and constants
     DATA_DIR = Path(folder_path).resolve()

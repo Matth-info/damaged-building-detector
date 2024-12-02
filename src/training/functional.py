@@ -620,7 +620,7 @@ def testing(
     num_classes: int = 2,
     reduction: str = "weighted",
     class_weights: List[float] = None, 
-    tta: bool = True
+    tta: bool = True,
 ) -> Tuple[float, Dict[str, float]]:
     """
     Perform one epoch of validation.

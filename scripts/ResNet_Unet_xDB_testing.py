@@ -2,6 +2,7 @@ import argparse
 import torch
 from torch.utils.data import DataLoader
 from torch.nn import MSELoss
+import numpy as np
 
 # Custom libraries
 from datasets import xDB_Damaged_Building, Puerto_Rico_Building_Dataset
@@ -11,6 +12,7 @@ from models import ResNet_UNET
 from losses import DiceLoss, FocalLoss, Ensemble
 from metrics import f1_score, iou_score, balanced_accuracy
 from models import AutoEncoder
+from utils import display_semantic_predictions_batch
 
 import logging
 
@@ -25,6 +27,8 @@ def parse_args():
     parser.add_argument("--model_path", type=str, required=True, help="Path to the saved model file.")
     parser.add_argument("--tta", action="store_true", help="Enable Test Time Augmentation (TTA).")
     parser.add_argument("--mixed_precision", action="store_true", help="Enable mixed-precision testing.")
+    parser.add_argument("--display_samples",type=int,default=0,help="Number of test samples to display predictions for. Set to 0 to disable."
+) 
     return parser.parse_args()
 
 
@@ -58,7 +62,7 @@ def choose_test_dataset(dataset_name, origin_dir):
             pre_disaster_dir="Pre_Event_Grids_In_TIFF",
             post_disaster_dir="Post_Event_Grids_In_TIFF",
             mask_dir="Pre_Event_Grids_In_TIFF_mask",
-            transform=get_val_augmentation_pipeline(image_size=(512, 512), max_pixel_value=1),
+            transform=None,
             extension="tif",
             cloud_filter_params=cloud_filter_params,
             preprocessing_mode="offline",
@@ -136,6 +140,22 @@ def main():
     for name, value in test_metrics.items():
         logger.info(f"{name}: {value.item()}")
 
+    if args.display_samples > 0 :
+        test_dl = DataLoader(data_test, batch_size=args.display_samples, shuffle=True)
+        inputs = next(iter(test_dl))
+        with torch.no_grad():
+            images , masks = inputs[image_tag].to("cuda"), inputs["mask"].to("cuda")
+            preds = model.predict(images)
+            display_semantic_predictions_batch(
+                                       images=images, 
+                                       mask_predictions=preds,
+                                       mask_labels=masks, 
+                                       normalized = {
+                                           "mean": np.array([0.349, 0.354, 0.268]), 
+                                           "std": np.array([0.114, 0.102, 0.094])
+                                            }
+                                        folder_path="../outputs/plots"
+                                       )
 
 if __name__ == "__main__":
     main()
