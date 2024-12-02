@@ -362,7 +362,7 @@ def validation_epoch(
     is_mixed_precision: bool = False,
     class_weights: List[float] = None,
     reduction: str = "weighted",
-    tta:bool = False
+    tta: bool = False
 ) -> Tuple[float, Dict[str, float]]:
     """
     Perform one epoch of validation.
@@ -392,7 +392,7 @@ def validation_epoch(
     step = 0
 
     # Iterate through the validation dataset
-    with tqdm(valid_dl, desc=f"Validation Epoch {epoch_number + 1}", unit="batch", disable=True) as t:
+    with tqdm(valid_dl, desc=f"Validation Epoch {epoch_number + 1}", unit="batch") as t:
         for batch in t:
             batch_size = batch[image_key].size(0)
 
@@ -650,7 +650,7 @@ def testing(
     total_metrics = {metric.__name__: 0.0 for metric in metrics}  # Initialize totals
 
     # Iterate through the validation dataset
-    with tqdm(test_dataloader, desc=f"Testing", unit="batch", disable=True) as t:
+    with tqdm(test_dataloader, desc=f"Testing", unit="batch") as t:
         for batch in t:
             batch_size = batch[image_key].size(0)
 

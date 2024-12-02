@@ -8,11 +8,8 @@ from pathlib import Path
 from typing import List, Dict, Optional
 from torch.utils.data import Dataset
 from shapely import wkt
-from shapely.geometry.multipolygon import MultiPolygon
 import albumentations as A  # Import alias for Albumentations
 import rasterio
-import re
-import glob
 import csv 
 from tqdm import tqdm
 import json

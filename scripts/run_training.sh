@@ -8,7 +8,7 @@ cd "$SCRIPT_DIR" || exit
 # Function to run training for a specified backbone
 run_training() {
     local BACKBONE=$1
-    local BATCH_SIZE=16
+    local BATCH_SIZE=8
     local EXPERIMENT_NAME="xDB_${BACKBONE}_Unet"
     local ORIGIN_DIR="../data/xDB/tier3"
 
@@ -27,7 +27,7 @@ run_training() {
 }
 
 # Run training for ResNet34
-run_training "resnet34"
+#run_training "resnet34"
 
 # Run training for ResNet50
 run_training "resnet50"
