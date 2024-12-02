@@ -10,12 +10,12 @@ from pathlib import Path
 from typing import List, Optional
 import matplotlib.pyplot as plt
 
-
+__all__ = ["prepare_cloud_segmentation_data"]
 class Cloud_DrivenData_Dataset(torch.utils.data.Dataset):
     def __init__(
         self,
         x_paths: pd.DataFrame,
-        bands: List[str],
+        bands: List[str] = ["B04", "B03", "B02"],
         y_paths: Optional[pd.DataFrame] = None,
         transform: Optional[A.Compose] = None,
     ):
@@ -148,32 +148,39 @@ class Cloud_DrivenData_Dataset(torch.utils.data.Dataset):
         Args:
             list_indices (List[int]): List of indices to display.
         """
-        num_samples = len(list_indices)
-        rows = (
-            num_samples + 1
-        ) // 2  # Calculate the number of rows for the subplot grid
-        fig, ax = plt.subplots(rows, 2, figsize=(15, 5 * rows))
+        import matplotlib.pyplot as plt  # Ensure matplotlib is imported
 
-        # Handle cases where there is only one sample by making ax iterable
-        if num_samples == 1:
-            ax = [ax]
+        num_samples = len(list_indices)
+        rows = num_samples  # Calculate the number of rows for the subplot grid
+        cols = 2  # Fixed number of columns: image and mask
+
+        fig, ax = plt.subplots(rows, cols, figsize=(15, 5 * rows))
+        ax = ax.reshape(-1, cols) if rows > 1 else [ax]  # Ensure `ax` is a list of lists
 
         for i, idx in enumerate(list_indices):
+            row = i
+
             # Load image and mask data
             x = self.true_color_img(idx)
             mask = self.open_mask(idx) if self.label is not None else None
 
-            # Display image and mask
-            ax[i][0].imshow(x)
-            ax[i][0].set_title(f"Sample {idx + 1}")
-            ax[i][0].axis("off")
+            # Display image
+            ax[row][0].imshow(x)
+            ax[row][0].set_title(f"Sample {idx + 1}")
+            ax[row][0].axis("off")
 
+            # Display mask + image 
             if mask is not None:
-                ax[i][1].imshow(mask)
-                ax[i][1].set_title(f"Ground truth {idx + 1}")
-                ax[i][1].axis("off")
+                ax[row][1].imshow(x, alpha=0.5)
+                ax[row][1].imshow(mask, alpha=0.5)
+                ax[row][1].set_title(f"Ground truth {idx + 1}")
+                ax[row][1].axis("off")
             else:
-                ax[i][1].axis("off")
+                ax[row][1].axis("off")
+
+        # Hide unused subplots if any
+        for i in range(num_samples, rows * cols):
+            ax[i // cols][i % cols].axis("off")
 
         # Adjust layout for better spacing
         plt.tight_layout()

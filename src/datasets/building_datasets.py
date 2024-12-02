@@ -57,7 +57,8 @@ class Puerto_Rico_Building_Dataset(Dataset):
         self.image_filenames = self._find_image_filenames()
 
         # Load cloud filter if available
-        self.cloud_filter_load()
+        if self.cloud_filter_params is not None: 
+            self.cloud_filter_load()
 
         # Apply offline preprocessing if specified
         if self.preprocessing_mode == "offline":
@@ -207,9 +208,9 @@ class Puerto_Rico_Building_Dataset(Dataset):
         if self.transform:
             transformed = self.transform(image=pre_image, mask=mask_image)
             transformed_bis = self.transform(image=post_image)
-            pre_image = transformed["image"]
-            post_image = transformed_bis["image"]
-            mask_image = transformed["mask"]
+            pre_image = transformed["image"].to(torch.float32) / 255.0
+            post_image = transformed_bis["image"].to(torch.float32) / 255.0
+            mask_image = transformed["mask"].to(torch.long)
         else:
             # Convert images and mask to tensors with normalization for compatibility with PyTorch
             pre_image = (torch.tensor(pre_image, dtype=torch.float32).permute(2, 0, 1) / 255.0)
@@ -312,7 +313,9 @@ class Puerto_Rico_Building_Dataset(Dataset):
 
 class OpenCities_Building_Dataset(Dataset):
     def __init__(
-        self, images_dir: str, masks_dir: str, transform: Optional[A.Compose] = None,
+        self, images_dir: str, 
+        masks_dir: str, 
+        transform: Optional[A.Compose] = None,
         filter_invalid_image=True
     ):
         """
@@ -393,7 +396,8 @@ class OpenCities_Building_Dataset(Dataset):
             transformed = self.transform(
                 image=image.transpose(1, 2, 0), mask=mask
             )
-            image, mask = transformed["image"], transformed["mask"],
+            image = transformed["image"].to(torch.float32) / 255
+            mask = transformed["mask"].to(torch.int64) 
         else:
             image = torch.tensor(image, dtype=torch.float32) / 255
             mask = torch.tensor(mask, dtype=torch.int64)
@@ -456,7 +460,7 @@ class OpenCities_Building_Dataset(Dataset):
             # Display the image and the corresponding mask
             ax[i][0].imshow(image)
             ax[i][0].set_title(f"Image {self.filenames[idx].name}")
-            ax[i][1].imshow(image)
+            ax[i][1].imshow(image, alpha=0.5)
             ax[i][1].imshow(mask.squeeze(), alpha=0.5)
             ax[i][1].set_title(f"Mask {self.filenames[idx].name}")
 
@@ -712,7 +716,7 @@ class xDB_Damaged_Building(Dataset):
         
         return image_json["metadata"]
     
-    def display_list(self, list_ids: List[int], time="pre", annotated=True, cols=3):
+    def display_data(self, list_ids: List[int], time="pre", annotated=True, cols=3):
         """
         Display a list of images with or without annotations.
 

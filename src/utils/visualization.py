@@ -72,13 +72,15 @@ def display_semantic_predictions_batch(images,
         
         # Show the predicted mask
         plt.subplot(1, 3, 2)
-        plt.imshow(mask_prediction, cmap='jet', interpolation='none')
+        plt.imshow(image, alpha=0.5)
+        plt.imshow(mask_prediction, cmap='jet', interpolation='none', alpha=0.5)
         plt.axis('off')
         plt.title("Predicted Mask")
         
         # Show the ground truth mask
         plt.subplot(1, 3, 3)
-        plt.imshow(mask_label, cmap='jet', interpolation='none')
+        plt.imshow(image, alpha=0.5)
+        plt.imshow(mask_label, cmap='jet', interpolation='none',alpha=0.5)
         plt.axis('off')
         plt.title("Ground Truth Mask")
         
