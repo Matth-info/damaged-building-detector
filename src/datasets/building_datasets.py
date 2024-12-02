@@ -200,16 +200,16 @@ class Puerto_Rico_Building_Dataset(Dataset):
             ).convert("RGB")
         ).astype(np.float32)
 
-        mask_image = np.array(
-            Image.open(self.mask_dir / f"{image_name}_mask.{self.extension}").convert("L")
-        )
+        mask_image = (np.array(
+            Image.open(self.mask_dir / f"{image_name}_mask.{self.extension}").convert("L") 
+        ) > 0).astype(np.uint8)
 
         # Apply transformations if specified (Albumentations supports multiple inputs in the same pipeline)
         if self.transform:
-            transformed = self.transform(image=pre_image, mask=mask_image)
-            transformed_bis = self.transform(image=post_image)
-            pre_image = transformed["image"].to(torch.float32) / 255.0
-            post_image = transformed_bis["image"].to(torch.float32) / 255.0
+            transformed = self.transform(image=pre_image / 255.0, mask=mask_image)
+            transformed_bis = self.transform(image=post_image / 255.0)
+            pre_image = transformed["image"].to(torch.float32) 
+            post_image = transformed_bis["image"].to(torch.float32)
             mask_image = transformed["mask"].to(torch.long)
         else:
             # Convert images and mask to tensors with normalization for compatibility with PyTorch
@@ -222,7 +222,11 @@ class Puerto_Rico_Building_Dataset(Dataset):
             batch = {"pre_image": pre_image.unsqueeze(0), "post_image": post_image.unsqueeze(0)}
             not_cloudy = self.cloud_filter_batch(batch)[0] # First (and only) sample in batch
             if not not_cloudy:
-                raise IndexError(f"Filtered out image: {image_name}")
+                # Replace with tensors of zeros
+                h, w = pre_image.shape[1], pre_image.shape[2]  # Height and width of the images
+                pre_image = torch.zeros((3, h, w), dtype=torch.float32)  # Zero tensor for pre-image
+                post_image = torch.zeros((3, h, w), dtype=torch.float32)  # Zero tensor for post-image
+                mask_image = torch.zeros((h, w), dtype=torch.long)  # Zero tensor for mask
 
         return {"pre_image": pre_image, "post_image": post_image, "mask": mask_image}
 

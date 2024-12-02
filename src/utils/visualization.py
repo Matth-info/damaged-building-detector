@@ -80,7 +80,7 @@ def display_semantic_predictions_batch(images,
         # Show the ground truth mask
         plt.subplot(1, 3, 3)
         plt.imshow(image, alpha=0.5)
-        plt.imshow(mask_label, cmap='jet', interpolation='none',alpha=0.5)
+        plt.imshow(mask_label, cmap='jet', interpolation='none', alpha=0.5)
         plt.axis('off')
         plt.title("Ground Truth Mask")
         
@@ -94,7 +94,7 @@ def display_semantic_predictions_batch(images,
         
         plt.show()
 
-def display_instance_predictions_batch(model, batch, device='cuda', score_threshold=0.6, max_images=5, display: List[str]=None):
+def display_instance_predictions_batch(images, mask_predictions, score_threshold=0.6, max_images=5, display: List[str]=None ):
     """
     Visualizes predictions from the model on a given dataset.
 
@@ -107,45 +107,41 @@ def display_instance_predictions_batch(model, batch, device='cuda', score_thresh
     """
     assert display is not None, "Display 'boxes' and/or 'masks"
     # Set model to evaluation mode
-    model.eval()
 
     # Loop through the data loader (for visualization, we can stop after a few images)
-    with torch.no_grad():
-        (images, targets) = batch 
-        images = images.to(device)
 
-        # Make predictions
-        predictions = model(images)[:max_images]  # Predictions are a list of dicts with "boxes", "labels", "scores", "masks"
+    # Make predictions
+    predictions = mask_predictions[:max_images]  # Predictions are a list of dicts with "boxes", "labels", "scores", "masks"
 
-        for i in range(len(predictions)):
-            pred = predictions[i]
-            image = images[i]
+    for i in range(len(predictions)):
+        pred = predictions[i]
+        image = images[i]
 
-            # Normalize and convert to uint8
-            output_image = (255.0 * (image - image.min()) / (image.max() - image.min())).to(torch.uint8)
+        # Normalize and convert to uint8
+        output_image = (255.0 * (image - image.min()) / (image.max() - image.min())).to(torch.uint8)
 
-            # Filter out low-confidence predictions 
-            mask = pred["scores"] > score_threshold 
-            pred_boxes = pred["boxes"][mask]
-            pred_labels = [f"{score:.3f}" for score in pred["scores"][mask]]
-            pred_masks = pred["masks"][mask]
+        # Filter out low-confidence predictions 
+        mask = pred["scores"] > score_threshold 
+        pred_boxes = pred["boxes"][mask]
+        pred_labels = [f"{score:.3f}" for score in pred["scores"][mask]]
+        pred_masks = pred["masks"][mask]
 
-            # Draw bounding boxes
-            if "boxes" in display:
-                output_image = draw_bounding_boxes(output_image, pred_boxes.long(), labels=pred_labels, colors="red")
+        # Draw bounding boxes
+        if "boxes" in display:
+            output_image = draw_bounding_boxes(output_image, pred_boxes.long(), labels=pred_labels, colors="red")
 
 
-            # Draw segmentation masks
-            if "masks" in display:
-                if pred_masks.numel() > 0:  # Ensure there are masks to draw
-                    masks = (pred_masks > 0.5).squeeze(1)  # Binarize the masks
-                    output_image = draw_segmentation_masks(output_image, masks, alpha=0.5, colors="blue")
+        # Draw segmentation masks
+        if "masks" in display:
+            if pred_masks.numel() > 0:  # Ensure there are masks to draw
+                masks = (pred_masks > 0.5).squeeze(1)  # Binarize the masks
+                output_image = draw_segmentation_masks(output_image, masks, alpha=0.5, colors="blue")
 
-            # Move the output image to the CPU and convert to NumPy array for plotting
-            output_image = output_image.cpu()
+        # Move the output image to the CPU and convert to NumPy array for plotting
+        output_image = output_image.cpu()
 
-            # Plot the image
-            plt.figure(figsize=(8, 8))
-            plt.imshow(output_image.permute(1, 2, 0)) 
-            plt.axis('off')
-            plt.show()
+        # Plot the image
+        plt.figure(figsize=(12, 4))
+        plt.imshow(output_image.permute(1, 2, 0)) 
+        plt.axis('off')
+        plt.show()

@@ -82,12 +82,12 @@ def augmentation_test_time(model: nn.Module, images , list_augmentations, aggreg
     
 
 #### Building Segmentation Model Augmentation Pipeline #####
-def get_train_augmentation_pipeline(image_size=(512, 512), max_pixel_value=255):
+def get_train_augmentation_pipeline(image_size=(512, 512), max_pixel_value=1, mean=(0.349, 0.354, 0.268), std=(0.114, 0.102, 0.094)):
     transform = A.Compose([
         # Resize images and masks
         A.Resize(image_size[0], image_size[1], p=1.0),  # Ensure both image and mask are resized
         # Normalize images
-        A.Normalize(mean=(0.349, 0.354, 0.268), std=(0.114, 0.102, 0.094), max_pixel_value=max_pixel_value, p=1.0),
+        A.Normalize(mean=mean, std=std, max_pixel_value=max_pixel_value, p=1.0),
         # Random horizontal flip
         A.HorizontalFlip(p=0.5),
         # Random vertical flip
@@ -107,11 +107,11 @@ def get_train_augmentation_pipeline(image_size=(512, 512), max_pixel_value=255):
     ])
     return transform
 
-def get_val_augmentation_pipeline(image_size=(512, 512), max_pixel_value=255):
+def get_val_augmentation_pipeline(image_size=(512, 512), max_pixel_value=1, mean=(0.349, 0.354, 0.268), std=(0.114, 0.102, 0.094)):
     transform = A.Compose([
         # Resize images and masks
         A.Resize(image_size[0], image_size[1], p=1.0),  # Ensure both image and mask are resized
-        A.Normalize(mean=(0.349, 0.354, 0.268), std=(0.114, 0.102, 0.094), max_pixel_value=max_pixel_value, p=1.0),
+        A.Normalize(mean=mean, std=std, max_pixel_value=max_pixel_value, p=1.0),
         ToTensorV2()
     ])
     return transform
