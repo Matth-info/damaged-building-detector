@@ -780,3 +780,235 @@ class xDB_Damaged_Building(Dataset):
         if save:
             plt.savefig('split_image.png', dpi = 100)
         plt.show()
+
+
+
+###### Siamese Datasets ######
+class xDB_Siamese_Dataset(Dataset):
+    def __init__(self, 
+                 origin_dir: str,
+                 mode="damage",
+                 transform: Optional[A.Compose] = None,
+                 type: str = "train",
+                 val_ratio = 0.1, 
+                 test_ratio = 0.1, 
+                 seed: int = 42
+                 ):
+        assert type in ["train", "val", "test"], "Dataset must be 'train', 'val' or 'test'"
+        self.type = type
+        np.random.seed(seed=seed)
+        self.label_dir = Path(origin_dir) / "labels"
+        assert mode in ["building", "damage"], "Mode must be 'building' or 'damage'."
+        self.mode = mode
+        self.list_labels = [str(x) for x in self.label_dir.rglob(pattern=f'*post_*.json')]
+        self.transform = transform
+
+        self.val_ratio = val_ratio
+        self.test_ratio = test_ratio
+
+        self._split()  # Perform a split for train, val, and test datasets
+
+    def _split(self):
+        total_size = len(self.list_labels)
+        test_size = int(total_size * self.test_ratio)
+        val_size = int(total_size * self.val_ratio)
+        train_size = total_size - test_size - val_size
+
+        indices = np.random.permutation(total_size)
+
+        train_indices = indices[:train_size]
+        val_indices = indices[train_size:train_size + val_size]
+        test_indices = indices[train_size + val_size:]
+
+        if self.type == "train":
+            self.list_labels = [self.list_labels[i] for i in train_indices]
+        elif self.type == "val":
+            self.list_labels = [self.list_labels[i] for i in val_indices]
+        elif self.type == "test":
+            self.list_labels = [self.list_labels[i] for i in test_indices]
+        else:
+            raise ValueError("Unknown dataset type. Use 'train', 'val', or 'test'.")
+
+        print(f"Loaded {len(self.list_labels)} {self.type} labels.")
+
+    def __getitem__(self, index) -> Dict[str, torch.Tensor]:
+        json_path = self.list_labels[index]
+
+        # Load pre and post images
+        pre_image = self.get_image(json_path, time="pre")
+        post_image = self.get_image(json_path, time="post")
+
+        # Load masks
+        pre_mask = self.get_mask(json_path, time="pre", mode=self.mode)
+        post_mask = self.get_mask(json_path, time="post", mode=self.mode)
+
+        # Apply transformations if defined
+        if self.transform:
+            pre_image = np.float32(np.array(pre_image)) / 255.0
+            post_image = np.float32(np.array(post_image)) / 255.0
+
+            transformed_pre = self.transform(image=pre_image, mask=pre_mask)
+            transformed_post = self.transform(image=post_image, mask=post_mask)
+
+            pre_image = transformed_pre["image"].float()
+            pre_mask = transformed_pre["mask"].long()
+
+            post_image = transformed_post["image"].float()
+            post_mask = transformed_post["mask"].long()
+        else:
+            pre_image = torch.from_numpy(np.array(pre_image)).permute(2, 0, 1).float() / 255.0
+            pre_mask = torch.from_numpy(pre_mask).long()
+
+            post_image = torch.from_numpy(np.array(post_image)).permute(2, 0, 1).float() / 255.0
+            post_mask = torch.from_numpy(post_mask).long()
+
+        return {"pre_image": pre_image, "post_image": post_image, "pre_mask": pre_mask, "post_mask": post_mask}
+
+    def __len__(self) -> int:
+        return len(self.list_labels)
+
+    def get_image(self, json_path, time="pre") -> Image:
+        if time == 'pre':
+            json_path = json_path.replace('post', 'pre')
+
+        img_path = json_path.replace('labels', 'images').replace('.json', '.png')
+        return Image.open(img_path)
+
+    def get_damage_type(self, properties) -> str:
+        if 'subtype' in properties:
+            return properties['subtype']
+        else:
+            return 'no-damage'
+
+    def get_mask(self, label_path, time="post", mode="building") -> np.ndarray:
+        if time == 'pre':
+            label_path = label_path.replace('post', 'pre')
+
+        with open(label_path) as json_file:
+            image_json = json.load(json_file)
+
+        metadata = image_json["metadata"]
+        image_height, image_width = metadata["height"], metadata["width"]
+        coords = image_json['features']["xy"]
+        wkt_polygons = []
+
+        for coord in coords:
+            damage = self.get_damage_type(coord['properties'])
+            wkt_polygons.append((damage, coord['wkt']))
+
+        polygons = []
+        for damage, swkt in wkt_polygons:
+            polygons.append((damage, wkt.loads(swkt)))
+
+        mask = Image.new('L', (image_height, image_width), 0)
+        draw = ImageDraw.Draw(mask)
+
+        damage_classes = {
+            "no-damage": 1,
+            "minor-damage": 2,
+            "major-damage": 3,
+            "destroyed": 4
+        }
+
+        for damage, polygon in polygons:
+            if polygon.is_valid:
+                x, y = polygon.exterior.coords.xy
+                coords = list(zip(x, y))
+                if mode == "building":
+                    draw.polygon(coords, fill=1)
+                elif mode == "damage":
+                    damage_value = damage_classes.get(damage, 0)
+                    draw.polygon(coords, fill=damage_value)
+
+        return np.array(mask)
+
+        
+    def display_data(self, list_ids: List[int], annotated=True, cols=2):
+        """
+        Display a list of images with or without annotations.
+
+        Parameters:
+            list_ids (List[int]): List of indices of images to display.
+            annotated (bool): If True, overlay annotations on the images.
+            cols (int): Number of columns in the grid for displaying images.
+        """
+
+        from matplotlib.patches import Patch
+
+        if cols <= 0:
+            raise ValueError("Number of columns (cols) must be a positive integer.")
+
+        # Number of images
+        num_images = len(list_ids)
+        if num_images == 0:
+            print("No images to display.")
+            return
+
+        # Determine grid size
+        rows = num_images # Ceiling division
+        # Set up the matplotlib figure
+        fig, axes = plt.subplots(rows, cols, figsize=(5 * cols, 5 * rows))
+        axes = axes.flatten() if rows > 1 or cols > 1 else [axes]  # Handle single image case
+        # Damage classes and their corresponding colors
+        if self.mode == "damage":
+            damage_classes = {
+                "no-damage": 1,
+                "minor-damage": 2,
+                "major-damage": 3,
+                "destroyed": 4
+            }
+            damage_colors = {
+                    0: (0, 0, 0, 0),  # Transparent background for class 0
+                    1: (0, 1, 0, 1),  # Green with some transparency for "no-damage"
+                    2: (1, 1, 0, 1),  # Yellow with some transparency for "minor-damage"
+                    3: (1, 0.5, 0, 1),  # Orange with some transparency for "major-damage"
+                    4: (1, 0, 0, 1)   # Red with some transparency for "destroyed"
+                }
+            legend_elements = [
+                    Patch(facecolor=damage_colors[val], edgecolor=None, label=key)
+                    for key, val in damage_classes.items()
+                    ]
+            cmap=plt.cm.colors.ListedColormap([damage_colors[val] for val in sorted(damage_colors.keys())])
+        
+        elif self.mode == "building":
+            # Legend components
+            legend_elements = [
+                Patch(facecolor='red', edgecolor=None, label='building')
+                ]
+            cmap = "Reds"
+            
+        for i, idx in enumerate(list_ids):
+            if idx < 0 or idx >= len(self):  # Validate index
+                print(f"Index {idx} is out of bounds. Skipping...")
+                continue
+
+            # Get the image data
+            data = self.__getitem__(idx)
+            pre_image, pre_mask = data["pre_image"].permute(1, 2, 0).numpy(), data["pre_mask"].numpy()
+            post_image, post_mask = data["post_image"].permute(1, 2, 0).numpy(), data["post_mask"].numpy()
+          
+            # Display pre-disaster image
+            axes[2 * i].imshow(pre_image)
+            if annotated:
+                color_map_pre_image = plt.cm.colors.ListedColormap([(0, 0, 0, 0),(0, 1, 0, 1)])
+                axes[2 * i].imshow(pre_mask, alpha=0.3, cmap = cmap if self.mode == "building" else color_map_pre_image) 
+            axes[2 * i].set_title(f"Image {idx}: Pre-disaster")
+            axes[2 * i].axis("off")
+
+            # Display post-disaster image
+            axes[2 * i + 1].imshow(post_image)
+            if annotated:
+                axes[2 * i + 1].imshow(post_mask, alpha=0.3, cmap=cmap)
+            axes[2 * i + 1].set_title(f"Image {idx}: Post-disaster")
+            axes[2 * i + 1].axis("off")
+
+        # Hide unused axes
+        for j in range(2 * num_images, len(axes)):
+            axes[j].axis("off")
+
+        # Add legend
+        plt.figlegend(handles=legend_elements, loc='lower right', ncol=1, frameon=False, fontsize=10)
+        
+        # Adjust layout and show the plot
+        plt.tight_layout()
+        plt.show()

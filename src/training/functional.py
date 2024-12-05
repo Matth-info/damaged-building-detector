@@ -21,7 +21,7 @@ from .utils import (
     display_metrics,
 )
 
-from .augmentations import augmentation_test_time
+from .augmentations import augmentation_test_time, augmentation_test_time_siamese
 import albumentations as A
 
 import time
@@ -44,6 +44,7 @@ def training_step(
     metrics: List[Callable],
     step_number: int,
     image_key: str = "image",
+    mask_key: str = "mask",
     device: str = "cuda",
     is_mixed_precision: bool = False,
     scaler: torch.amp.GradScaler = None,
@@ -52,18 +53,20 @@ def training_step(
     reduction: str = "weighted",
     class_weights: List[float] = [0.1, 0.9],
     max_norm: float = 1.0,
+    siamese: bool = False
 ) -> Tuple[float, Dict[str, float]]:
     """
-    Perform a single training step on a batch of data.
+    Perform a single training step on a batch of data, supporting Siamese architectures.
 
     Args:
         model (nn.Module): The model being trained.
-        batch (dict): The input batch with keys `image_key` and `mask`.
+        batch (dict): The input batch with keys for pre- and post-disaster images.
         loss_fn (_Loss): The loss function to optimize.
         optimizer (optim.Optimizer): The optimizer for the model parameters.
         metrics (List[Callable]): List of metric functions to compute.
         step_number (int): Current training step number.
         image_key (str): Key in the batch dictionary for the input image.
+        mask_key (str): Key in the batch dictionary for the target mask.
         device (str): The device to run the computation on ("cuda" or "cpu").
         is_mixed_precision (bool): Whether to use mixed precision.
         scaler (torch.cuda.amp.GradScaler): Gradient scaler for mixed precision.
@@ -71,36 +74,44 @@ def training_step(
         num_classes (int): Number of classes for metrics (if applicable).
         reduction (str): Reduction method for loss.
         max_norm (float): Max norm for gradient clipping.
+        siamese (bool): Whether to perform Siamese training.
 
     Returns:
         Tuple[float, Dict[str, float]]: The loss value and a dictionary of computed metrics.
     """
-
     # Extract inputs and targets from the batch
-    x = batch[image_key]  # e.g., FloatTensor (B, C, H, W)
-    y = batch["mask"]     # e.g., LongTensor (B, H, W)
-
-    # Move data to the specified device
-    x = x.to(device, non_blocking=True, dtype=torch.float32)
-    y = y.to(device, non_blocking=True, dtype=torch.int64)
+    if siamese:
+        x1 = batch["pre_image"].to(device, non_blocking=True, dtype=torch.float32)  # Pre-disaster image
+        x2 = batch["post_image"].to(device, non_blocking=True, dtype=torch.float32)  # Post-disaster image
+    else:
+        x = batch[image_key].to(device, non_blocking=True, dtype=torch.float32)  # Single input image e.g., FloatTensor (B, C, H, W)
+    
+    y = batch[mask_key].to(device, non_blocking=True, dtype=torch.int64)  # Target mask e.g., LongTensor (B, H, W)
 
     optimizer.zero_grad()
 
     if is_mixed_precision:
         assert scaler is not None, "GradScaler must be provided for mixed precision training"
         with autocast(device_type=device, dtype=torch.float16):
-            outputs = model(x)
+            if siamese:
+                outputs = model(x1, x2)  # Forward pass for Siamese
+            else:
+                outputs = model(x)  # Forward pass for standard model
             # Compute the loss and its gradients
             loss = loss_fn(outputs, y)
             # adjust the learning weights
         scaler.scale(loss).backward()  # compute gradient in float16 and multiple gradient by a scale factor
         # avoiding underflow = minor change because of weight format
         scaler.unscale_(optimizer)
-        torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
+        torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=max_norm)
         scaler.step(optimizer)
         scaler.update()
     else:
-        outputs = model(x)
+        if siamese:
+            outputs = model(x1, x2)  # Forward pass for Siamese
+        else:
+            outputs = model(x)  # Forward pass for standard model
+
         loss = loss_fn(outputs, y)
         loss.backward()
         torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
@@ -143,7 +154,8 @@ def validation_step(
     num_classes: int = 2,
     reduction: str = "weighted",
     class_weights: List[float] = None, 
-    tta: bool = False 
+    tta: bool = False,
+    siamese: bool = False
 ) -> Tuple[float, Dict[str, float]]:
     """
     Perform a single validation step on a batch of data.
@@ -159,17 +171,19 @@ def validation_step(
         mode (str): Metric computation mode, e.g., "multiclass".
         num_classes (int): Number of classes for metrics (if applicable).
         reduction (str): Reduction method for loss.
+        siamese (bool): Whether to perform Siamese training.
 
     Returns:
         Tuple[float, Dict[str, float]]: Validation loss and a dictionary of computed metrics.
     """
-    # Extract inputs and targets from the batch
-    x = batch[image_key]  # e.g., FloatTensor (B, C, H, W)
-    y = batch[mask_key]     # e.g., LongTensor (B, H, W)
 
-    # Move data to the specified device
-    x = x.to(device, non_blocking=True, dtype=torch.float32)
-    y = y.to(device, non_blocking=True, dtype=torch.int64)
+    if siamese:
+        x1 = batch["pre_image"].to(device, non_blocking=True, dtype=torch.float32)  # Pre-disaster image
+        x2 = batch["post_image"].to(device, non_blocking=True, dtype=torch.float32)  # Post-disaster image
+    else:
+        x = batch[image_key].to(device, non_blocking=True, dtype=torch.float32)  # Single input image
+    
+    y = batch[mask_key].to(device, non_blocking=True, dtype=torch.int64)  # Target mask
 
     # Disable gradients for validation
     with torch.no_grad():
@@ -177,6 +191,50 @@ def validation_step(
         if is_mixed_precision:
             with autocast(device_type=device, dtype=torch.float16):
                 if tta:
+                    if siamese:
+                        outputs = augmentation_test_time_siamese(
+                            model=model, 
+                            images_1=x1, 
+                            images_2=x2, 
+                            list_augmentations=[
+                                                A.HorizontalFlip(p=1.0),  # Horizontal flip
+                                                A.VerticalFlip(p=1.0)    # Vertical flip
+                                            ],
+                            aggregation="mean", 
+                            device=device
+                            )
+                    else:
+                        outputs = augmentation_test_time(
+                            model=model, 
+                            images=x, 
+                            list_augmentations=[
+                                                A.HorizontalFlip(p=1.0),  # Horizontal flip
+                                                A.VerticalFlip(p=1.0)    # Vertical flip
+                                            ],
+                            aggregation="mean", 
+                            device=device
+                        )
+                else:
+                    if siamese:
+                        outputs = model(x1,x2)
+                    else:
+                        outputs = model(x)
+                vloss = loss_fn(outputs, y)
+        else:
+            if tta:
+                if siamese:
+                    outputs = augmentation_test_time_siamese(
+                        model=model, 
+                        images_1=x1, 
+                        images_2=x2, 
+                        list_augmentations=[
+                                            A.HorizontalFlip(p=1.0),  # Horizontal flip
+                                            A.VerticalFlip(p=1.0)    # Vertical flip
+                                        ],
+                        aggregation="mean", 
+                        device=device
+                        )
+                else:
                     outputs = augmentation_test_time(
                         model=model, 
                         images=x, 
@@ -187,23 +245,11 @@ def validation_step(
                         aggregation="mean", 
                         device=device
                     )
+            else:
+                if siamese:
+                    outputs = model(x1,x2)
                 else:
                     outputs = model(x)
-                vloss = loss_fn(outputs, y)
-        else:
-            if tta:
-                outputs = augmentation_test_time(
-                    model=model, 
-                    images=x, 
-                    list_augmentations=[
-                                        A.HorizontalFlip(p=1.0),  # Horizontal flip
-                                        A.VerticalFlip(p=1.0)    # Vertical flip
-                                    ],
-                    aggregation="mean", 
-                    device=device
-                )
-            else: 
-                outputs = model(x)
 
             vloss = loss_fn(outputs, y)
 
@@ -245,11 +291,14 @@ def training_epoch(
     epoch_number: int = 0,
     writer: Optional[SummaryWriter] = None,
     image_key: str = "image",
+    mask_key: str = "mask",
     verbose: bool = True,
+    num_classes : int = 2,
     training_log_interval: int = 10,
     is_mixed_precision: bool = False,
     reduction: str = "weighted",
-    class_weights: List[float] = [0.1, 0.9]
+    class_weights: List[float] = None,
+    siamese: bool = False
 ):
     """
     Perform one epoch of training.
@@ -295,11 +344,13 @@ def training_epoch(
                 optimizer=optimizer,
                 step_number=step,
                 image_key=image_key,
+                mask_key=mask_key,
                 scaler=GradScaler(),
                 is_mixed_precision=is_mixed_precision,
-                num_classes=2,
+                num_classes=num_classes,
                 reduction=reduction,
-                class_weights=class_weights
+                class_weights=class_weights,
+                siamese=siamese
             )
 
             # Update loss and metrics accumulators
@@ -357,12 +408,15 @@ def validation_epoch(
     writer: SummaryWriter,
     metrics: List[Callable] = None,
     image_key: str = "image",
+    mask_key: str = "mask",
+    num_classes: int = 2, 
     verbose: bool = True,  # Adding verbose flag to control logging
     training_log_interval: int = 10,  # Define default interval for logging,
     is_mixed_precision: bool = False,
     class_weights: List[float] = None,
     reduction: str = "weighted",
-    tta: bool = False
+    tta: bool = False,
+    siamese : bool = False
 ) -> Tuple[float, Dict[str, float]]:
     """
     Perform one epoch of validation.
@@ -403,11 +457,13 @@ def validation_epoch(
                 loss_fn=loss_fn,
                 metrics=metrics,
                 image_key=image_key,
-                num_classes=2,
+                mask_key=mask_key,
+                num_classes=num_classes,
                 is_mixed_precision=is_mixed_precision,
                 class_weights=class_weights, 
                 reduction=reduction,
-                tta=tta
+                tta=tta,
+                siamese=siamese
             )
 
             # Accumulate validation loss
@@ -468,18 +524,19 @@ def train(
     model_dir="models",
     resume_path: Optional[str] = None,
     early_stopping_params: Optional[Dict[str, int]] = None,
-    image_key="image",
+    image_key: str ="image",
+    mask_key: str ="mask",
     verbose: bool = True,  # Adding verbose flag
     checkpoint_interval: int = 10,  # Add checkpoint interval parameter
     debug: bool = False,  # Add debug flag for memory logging, 
     device: str = "cuda" if torch.cuda.is_available() else "cpu",
+    num_classes: int = 2, 
     training_log_interval: int = 1, 
     is_mixed_precision: bool = False,
     reduction: str = "weighted",
-    class_weights: List[float] = [0.1, 0.9]
+    class_weights: List[float] = None,
+    siamese: bool = False
 ):
-
-    
     # Create a directory for the experiment
     timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
     log_dir = os.path.join(log_dir, f"{experiment_name}_{timestamp}")
@@ -529,24 +586,42 @@ def train(
 
             # Train phase
             epoch_loss, epoch_metrics = training_epoch(
-                model=model, train_dl=train_dl, loss_fn=loss_fn, metrics=metrics, 
-                optimizer=optimizer_ft, scheduler=lr_scheduler,
-                epoch_number=epoch, writer=writer, image_key=image_key,
-                verbose=verbose, training_log_interval=training_log_interval,
+                model=model, 
+                train_dl=train_dl, 
+                loss_fn=loss_fn, 
+                metrics=metrics, 
+                optimizer=optimizer_ft, 
+                scheduler=lr_scheduler,
+                epoch_number=epoch, 
+                writer=writer, 
+                image_key=image_key,
+                mask_key=mask_key,
+                num_classes=num_classes,
+                verbose=verbose, 
+                training_log_interval=training_log_interval,
                 is_mixed_precision=is_mixed_precision,
                 reduction=reduction,
-                class_weights=class_weights
+                class_weights=class_weights, 
+                siamese=siamese
             )
 
             # Validation phase
             epoch_vloss, epoch_vmetrics = validation_epoch(
-                model=model, valid_dl=valid_dl, loss_fn=loss_fn, 
-                epoch_number=epoch, writer=writer, metrics=metrics,
-                image_key=image_key, verbose=verbose,
+                model=model, 
+                valid_dl=valid_dl, 
+                loss_fn=loss_fn, 
+                epoch_number=epoch, 
+                writer=writer, 
+                metrics=metrics,
+                image_key=image_key, 
+                mask_key=mask_key, 
+                verbose=verbose,
                 training_log_interval=training_log_interval,
                 is_mixed_precision=is_mixed_precision,
                 reduction=reduction,
-                class_weights=class_weights
+                class_weights=class_weights,
+                siamese=siamese,
+                num_classes=num_classes
             )
 
             # Scheduler step after training
@@ -569,6 +644,16 @@ def train(
                 epoch=epoch,
                 device=device,
                 max_images=max_images,
+                image_key=image_key,
+                mask_key=mask_key,
+                siamese=siamese, 
+                color_dict = {
+                    0: (0, 0, 0),  # Transparent background for class 0
+                    1: (0, 255, 0),  # Green with some transparency for "no-damage"
+                    2: (255, 255, 0),  # Yellow with some transparency for "minor-damage"
+                    3: (255, 126, 0),  # Orange with some transparency for "major-damage"
+                    4: (255, 0, 0)   # Red with some transparency for "destroyed"
+                }
             )
 
             epoch_time = time.time() - start_time
@@ -621,6 +706,7 @@ def testing(
     reduction: str = "weighted",
     class_weights: List[float] = None, 
     tta: bool = True,
+    siamese: bool = False
 ) -> Tuple[float, Dict[str, float]]:
     """
     Perform one epoch of validation.
@@ -635,6 +721,7 @@ def testing(
         image_key (str): Key to access input images in the batch.
         verbose (bool): Whether to log detailed information (default: True).
         training_log_interval (int): Interval at which to log metrics.
+        siamese (bool) : Siamese Network 
 
     Returns:
         Tuple[float, Dict[str, float]]: Epoch validation loss and metric averages.
@@ -652,8 +739,11 @@ def testing(
     # Iterate through the validation dataset
     with tqdm(test_dataloader, desc=f"Testing", unit="batch") as t:
         for batch in t:
-            batch_size = batch[image_key].size(0)
-
+            if siamese:
+                batch_size = batch[image_key].size(0)
+            else:
+                batch_size = batch["pre_image"].size(0)
+            
             # Perform a validation step
             tloss, metrics_step = validation_step(
                 model=model,
@@ -666,7 +756,8 @@ def testing(
                 is_mixed_precision=is_mixed_precision,
                 reduction=reduction,
                 class_weights=class_weights,
-                tta=tta
+                tta=tta,
+                siamese=siamese
             )
 
             # Accumulate validation loss

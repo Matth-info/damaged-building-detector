@@ -70,7 +70,7 @@ class ResNet_UNET(nn.Module):
         super().__init__()
 
         # Modify first layer of ResNet34 to accept custom number of channels
-        filters, resnet = choose_resnet(model_name=backbone_name, pretrained=pretrained)  # Change this line
+        self.filters, resnet = choose_resnet(model_name=backbone_name, pretrained=pretrained)  # Change this line
        
         # Modify input channels if not 3
         if in_channels != 3:
@@ -82,7 +82,7 @@ class ResNet_UNET(nn.Module):
                 padding=3,
                 bias=False
             )
-            resnet.conv1 = self.firstconv  # Replace original ResNet conv1
+            # Replace original ResNet conv1
         else:
             self.firstconv = resnet.conv1
         
@@ -94,14 +94,14 @@ class ResNet_UNET(nn.Module):
         self.encoder2 = resnet.layer2 # 2 Basic Blocks : (filter[1] -> filter[2])
         self.encoder3 = resnet.layer3 # 2 Basic Blocks : (filter[2] -> filter[3])
         
-        self.center = DecoderBlock(in_channels=filters[3], mid_channels=filters[3]*4, out_channels=filters[3])
+        self.center = DecoderBlock(in_channels=self.filters[3], mid_channels=self.filters[3]*4, out_channels=self.filters[3])
         
-        self.decoder1 = DecoderBlock(in_channels=filters[3]+filters[2], mid_channels=filters[2]*4, out_channels=filters[2])
-        self.decoder2 = DecoderBlock(in_channels=filters[2]+filters[1], mid_channels=filters[1]*4, out_channels=filters[1])
-        self.decoder3 = DecoderBlock(in_channels=filters[1]+filters[0], mid_channels=filters[0]*4, out_channels=filters[0])
+        self.decoder1 = DecoderBlock(in_channels=self.filters[3]+self.filters[2], mid_channels=self.filters[2]*4, out_channels=self.filters[2])
+        self.decoder2 = DecoderBlock(in_channels=self.filters[2]+self.filters[1], mid_channels=self.filters[1]*4, out_channels=self.filters[1])
+        self.decoder3 = DecoderBlock(in_channels=self.filters[1]+self.filters[0], mid_channels=self.filters[0]*4, out_channels=self.filters[0])
         
         self.final = nn.Sequential(
-                nn.Conv2d(in_channels=filters[0], out_channels=32, kernel_size=3, padding=1),
+                nn.Conv2d(in_channels=self.filters[0], out_channels=32, kernel_size=3, padding=1),
                 nn.BatchNorm2d(32), 
                 nn.ReLU(inplace=True),
                 nn.Conv2d(in_channels=32, out_channels=out_channels, kernel_size=1),
