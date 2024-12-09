@@ -293,7 +293,7 @@ def training_epoch(
     image_key: str = "image",
     mask_key: str = "mask",
     verbose: bool = True,
-    num_classes : int = 2,
+    num_classes: int = 2,
     training_log_interval: int = 10,
     is_mixed_precision: bool = False,
     reduction: str = "weighted",
@@ -416,7 +416,7 @@ def validation_epoch(
     class_weights: List[float] = None,
     reduction: str = "weighted",
     tta: bool = False,
-    siamese : bool = False
+    siamese: bool = False
 ) -> Tuple[float, Dict[str, float]]:
     """
     Perform one epoch of validation.
@@ -446,7 +446,7 @@ def validation_epoch(
     step = 0
 
     # Iterate through the validation dataset
-    with tqdm(valid_dl, desc=f"Validation Epoch {epoch_number + 1}", unit="batch") as t:
+    with tqdm(valid_dl, desc=f"Validation Epoch {epoch_number + 1}", unit="batch", disable=False) as t:
         for batch in t:
             batch_size = batch[image_key].size(0)
 
@@ -524,8 +524,8 @@ def train(
     model_dir="models",
     resume_path: Optional[str] = None,
     early_stopping_params: Optional[Dict[str, int]] = None,
-    image_key: str ="image",
-    mask_key: str ="mask",
+    image_key: str = "image",
+    mask_key: str = "mask",
     verbose: bool = True,  # Adding verbose flag
     checkpoint_interval: int = 10,  # Add checkpoint interval parameter
     debug: bool = False,  # Add debug flag for memory logging, 
@@ -583,6 +583,9 @@ def train(
     with SummaryWriter(log_dir) as writer:
         for epoch in range(start_epoch, nb_epochs):
             start_time = time.time()
+            
+            lr_epoch = lr_scheduler.get_lr()
+            writer.add_scalar("Learning Rate", lr_epoch, epoch)
 
             # Train phase
             epoch_loss, epoch_metrics = training_epoch(
@@ -668,9 +671,7 @@ def train(
                 torch.save(
                     {
                         "epoch": epoch,
-                        "model_state": model.state_dict(),
-                        "optimizer_state": optimizer.state_dict(),
-                        "scheduler_state": scheduler.state_dict(),
+                        "model_state": model.state_dict()
                     },
                     checkpoint_path,
                 )

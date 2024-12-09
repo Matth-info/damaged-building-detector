@@ -44,6 +44,8 @@ import torchvision
 from torch.utils.tensorboard import SummaryWriter
 from typing import Union
 
+__all__ = ["apply_color_map"]
+
 # Function to apply colors to masks (labels and predictions)
 def apply_color_map(mask, color_dict):
     """
