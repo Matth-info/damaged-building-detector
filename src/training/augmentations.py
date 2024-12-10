@@ -179,8 +179,7 @@ def get_train_augmentation_pipeline(image_size=(512, 512), max_pixel_value=1, me
                 A.Transpose(p=0.5), 
             ], p = 1), 
             OneOf([
-                A.RandomBrightnessContrast(p=0.5),  # Random brightness and contrast change
-                A.RandomGamma(p=0.5),              # Random gamma change
+                A.RandomBrightnessContrast(p=0.5) # Random brightness and contrast change
             ], p=0.8),
             OneOf([
                 A.HueSaturationValue(p=0.5),       # HSV adjustment

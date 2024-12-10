@@ -114,7 +114,7 @@ def training_step(
 
         loss = loss_fn(outputs, y)
         loss.backward()
-        torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
+        torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=max_norm)
         optimizer.step()
 
     loss_value = loss.item()
@@ -333,7 +333,7 @@ def training_epoch(
     step = 0
 
     # Training loop with progress bar
-    with tqdm(train_dl, desc=f"Epoch {epoch_number + 1}", unit="batch", disable=True) as t:
+    with tqdm(train_dl, desc=f"Epoch {epoch_number + 1}", unit="batch", disable=False) as t:
         for batch in t:
             # Perform a single training step
             loss_t, metrics_step = training_step(
@@ -575,7 +575,7 @@ def train(
     best_avg_metric = 0
     overall_start_time = time.time()
     patience, trigger_times = early_stopping_params["patience"], early_stopping_params["trigger_times"]
-    max_images = 8
+    max_images = 5
 
     model.to(device)
 
@@ -650,7 +650,7 @@ def train(
                 image_key=image_key,
                 mask_key=mask_key,
                 siamese=siamese, 
-                color_dict = {
+                color_dict= {
                     0: (0, 0, 0),  # Transparent background for class 0
                     1: (0, 255, 0),  # Green with some transparency for "no-damage"
                     2: (255, 255, 0),  # Yellow with some transparency for "minor-damage"
