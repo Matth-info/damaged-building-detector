@@ -206,10 +206,9 @@ class Puerto_Rico_Building_Dataset(Dataset):
 
         # Apply transformations if specified (Albumentations supports multiple inputs in the same pipeline)
         if self.transform:
-            transformed = self.transform(image=pre_image / 255.0, mask=mask_image)
-            transformed_bis = self.transform(image=post_image / 255.0)
-            pre_image = transformed["image"].to(torch.float32) 
-            post_image = transformed_bis["image"].to(torch.float32)
+            transformed = self.transform(pre_image=pre_image / 255.0, post_image=post_image / 255.0, mask=mask_image)
+            pre_image = transformed["pre_image"].to(torch.float32) 
+            post_image = transformed["post_image"].to(torch.float32)
             mask_image = transformed["mask"].to(torch.long)
         else:
             # Convert images and mask to tensors with normalization for compatibility with PyTorch
@@ -788,7 +787,7 @@ class xDB_Siamese_Dataset(Dataset):
     def __init__(self, 
                  origin_dir: str,
                  mode="damage",
-                 transform: Optional[A.Compose] = None,
+                 transform : Optional[A.Compose] = None,
                  type: str = "train",
                  val_ratio = 0.1, 
                  test_ratio = 0.1, 
@@ -847,18 +846,20 @@ class xDB_Siamese_Dataset(Dataset):
             pre_image = np.float32(np.array(pre_image)) / 255.0
             post_image = np.float32(np.array(post_image)) / 255.0
 
-            transformed_pre = self.transform(image=pre_image, mask=pre_mask)
-            transformed_post = self.transform(image=post_image, mask=post_mask)
+            transformed = self.transform(
+                    image = pre_image,
+                    mask = pre_mask,
+                    post_image = post_image,
+                    post_mask = post_mask
+            )
+            pre_image = transformed["image"].float()
+            pre_mask = transformed["mask"].long()
+            post_image = transformed["post_image"].float()
+            post_mask = transformed["post_mask"].long()
 
-            pre_image = transformed_pre["image"].float()
-            pre_mask = transformed_pre["mask"].long()
-
-            post_image = transformed_post["image"].float()
-            post_mask = transformed_post["mask"].long()
         else:
             pre_image = torch.from_numpy(np.array(pre_image)).permute(2, 0, 1).float() / 255.0
             pre_mask = torch.from_numpy(pre_mask).long()
-
             post_image = torch.from_numpy(np.array(post_image)).permute(2, 0, 1).float() / 255.0
             post_mask = torch.from_numpy(post_mask).long()
 

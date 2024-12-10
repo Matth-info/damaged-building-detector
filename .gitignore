@@ -8,3 +8,4 @@ data/Cloud_DrivenData
 data/Open-cities
 data/Puerto_Rico_Dataset
 
+*.pyc
