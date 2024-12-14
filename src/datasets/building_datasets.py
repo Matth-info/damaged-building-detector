@@ -797,7 +797,7 @@ class xDB_Siamese_Dataset(Dataset):
         self.type = type
         np.random.seed(seed=seed)
         self.label_dir = Path(origin_dir) / "labels"
-        assert mode in ["building", "damage"], "Mode must be 'building' or 'damage'."
+        assert mode in ["building", "full_damage", "simple_damage", "change_detection"], "Mode must be 'building', 'full_damage', 'simple_damage' or 'change_detection'"
         self.mode = mode
         self.list_labels = [str(x) for x in self.label_dir.rglob(pattern=f'*post_*.json')]
         self.transform = transform
@@ -904,26 +904,50 @@ class xDB_Siamese_Dataset(Dataset):
         mask = Image.new('L', (image_height, image_width), 0)
         draw = ImageDraw.Draw(mask)
 
-        damage_classes = {
-            "no-damage": 1,
-            "minor-damage": 2,
-            "major-damage": 3,
-            "destroyed": 4
-        }
-
+        damage_classes = self.get_classes(mode)
+            
         for damage, polygon in polygons:
             if polygon.is_valid:
                 x, y = polygon.exterior.coords.xy
                 coords = list(zip(x, y))
-                if mode == "building":
-                    draw.polygon(coords, fill=1)
-                elif mode == "damage":
+                if mode is not None:
                     damage_value = damage_classes.get(damage, 0)
                     draw.polygon(coords, fill=damage_value)
 
         return np.array(mask)
-
-        
+    
+    def get_classes(self, mode):
+        if mode == "full_damage":
+            return {
+                "no-damage": 1,
+                "minor-damage": 2,
+                "major-damage": 3,
+                "destroyed": 4
+            }
+        elif mode == "simple_damage":
+            return {
+                "no-damage": 1,
+                "minor-damage": 1,
+                "major-damage": 2,
+                "destroyed": 2
+            }
+        elif mode == "change_detection":
+            return {
+                "no-damage": 0,
+                "minor-damage": 0,
+                "major-damage": 1,
+                "destroyed": 1
+            }
+        elif mode == "building":
+            return {
+                "no-damage": 1,
+                "minor-damage": 1,
+                "major-damage": 1,
+                "destroyed": 1
+            }
+        else:
+            return None 
+            
     def display_data(self, list_ids: List[int], annotated=True, cols=2):
         """
         Display a list of images with or without annotations.
@@ -951,33 +975,17 @@ class xDB_Siamese_Dataset(Dataset):
         fig, axes = plt.subplots(rows, cols, figsize=(5 * cols, 5 * rows))
         axes = axes.flatten() if rows > 1 or cols > 1 else [axes]  # Handle single image case
         # Damage classes and their corresponding colors
-        if self.mode == "damage":
-            damage_classes = {
-                "no-damage": 1,
-                "minor-damage": 2,
-                "major-damage": 3,
-                "destroyed": 4
-            }
-            damage_colors = {
-                    0: (0, 0, 0, 0),  # Transparent background for class 0
-                    1: (0, 1, 0, 1),  # Green with some transparency for "no-damage"
-                    2: (1, 1, 0, 1),  # Yellow with some transparency for "minor-damage"
-                    3: (1, 0.5, 0, 1),  # Orange with some transparency for "major-damage"
-                    4: (1, 0, 0, 1)   # Red with some transparency for "destroyed"
-                }
-            legend_elements = [
-                    Patch(facecolor=damage_colors[val], edgecolor=None, label=key)
-                    for key, val in damage_classes.items()
-                    ]
-            cmap=plt.cm.colors.ListedColormap([damage_colors[val] for val in sorted(damage_colors.keys())])
         
-        elif self.mode == "building":
-            # Legend components
-            legend_elements = [
-                Patch(facecolor='red', edgecolor=None, label='building')
-                ]
-            cmap = "Reds"
-            
+        damage_colors = {
+                0: (0, 0, 0),  # Transparent background for class 0
+                1: (0, 1, 0),  # Green with some transparency for "no-damage"
+                2: (1, 1, 0),  # Yellow with some transparency for "minor-damage"
+                3: (1, 0.5, 0),  # Orange with some transparency for "major-damage"
+                4: (1, 0, 0)   # Red with some transparency for "destroyed"
+            }
+        
+        cmap = plt.cm.colors.ListedColormap([damage_colors[val] for val in sorted(damage_colors.keys())])
+        
         for i, idx in enumerate(list_ids):
             if idx < 0 or idx >= len(self):  # Validate index
                 print(f"Index {idx} is out of bounds. Skipping...")
@@ -991,15 +999,14 @@ class xDB_Siamese_Dataset(Dataset):
             # Display pre-disaster image
             axes[2 * i].imshow(pre_image)
             if annotated:
-                color_map_pre_image = plt.cm.colors.ListedColormap([(0, 0, 0, 0),(0, 1, 0, 1)])
-                axes[2 * i].imshow(pre_mask, alpha=0.3, cmap = cmap if self.mode == "building" else color_map_pre_image) 
+                axes[2 * i].imshow(pre_mask, alpha=0.5, cmap=cmap) 
             axes[2 * i].set_title(f"Image {idx}: Pre-disaster")
             axes[2 * i].axis("off")
 
             # Display post-disaster image
             axes[2 * i + 1].imshow(post_image)
             if annotated:
-                axes[2 * i + 1].imshow(post_mask, alpha=0.3, cmap=cmap)
+                axes[2 * i + 1].imshow(post_mask, alpha=0.5, cmap=cmap)
             axes[2 * i + 1].set_title(f"Image {idx}: Post-disaster")
             axes[2 * i + 1].axis("off")
 
@@ -1007,8 +1014,6 @@ class xDB_Siamese_Dataset(Dataset):
         for j in range(2 * num_images, len(axes)):
             axes[j].axis("off")
 
-        # Add legend
-        plt.figlegend(handles=legend_elements, loc='lower right', ncol=1, frameon=False, fontsize=10)
         
         # Adjust layout and show the plot
         plt.tight_layout()

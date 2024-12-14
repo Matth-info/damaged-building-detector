@@ -19,6 +19,8 @@ from .utils import (
     save_model,
     load_model,
     display_metrics,
+    log_hyperparams,
+    log_graph
 )
 
 from .augmentations import augmentation_test_time, augmentation_test_time_siamese
@@ -579,12 +581,44 @@ def train(
 
     model.to(device)
 
+    # Prepare hyperparameters for logging
+    hyperparams = {
+        "epochs": nb_epochs,
+        "optimizer": type(optimizer_ft).__name__,
+        "scheduler": type(lr_scheduler).__name__,
+        "loss_function": loss_fn.__class__.__name__,
+        "metrics": [metric.__name__ for metric in metrics],
+        "device": device,
+        "num_classes": num_classes,
+        "is_mixed_precision": is_mixed_precision,
+        "reduction": reduction,
+        "class_weights": class_weights,
+        "siamese": siamese,
+        "learning_rate": params_opt.get("lr", 1e-4),
+        "optimizer_params": params_opt,
+        "scheduler_params": params_sc,
+        "early_stopping_params": early_stopping_params,
+        "checkpoint_interval": checkpoint_interval,
+        "training_log_interval": training_log_interval,
+        "verbose": verbose,
+        "debug": debug
+    }
+
     # Initialize TensorBoard writer
     with SummaryWriter(log_dir) as writer:
+
+        # log model graph 
+        log_graph(writer, model, siamese=siamese, device=device, input_shape=(1, 3, 512, 512))
+        logging.info("Model graph has been logged")
+        # Log hyperparameters
+        log_hyperparams(writer, hyperparams)
+        logging.info("Hyperparameters have been logged")
+
+
         for epoch in range(start_epoch, nb_epochs):
             start_time = time.time()
             
-            lr_epoch = lr_scheduler.get_lr()
+            lr_epoch = lr_scheduler.get_last_lr()[0] 
             writer.add_scalar("Learning Rate", lr_epoch, epoch)
 
             # Train phase

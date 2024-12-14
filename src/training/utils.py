@@ -7,6 +7,11 @@ from typing import Union
 import os
 from prettytable import PrettyTable
 
+import random
+from typing import Union, Dict, Any
+
+__all__ = ["apply_color_map"]
+
 
 def log_metrics(
     writer: SummaryWriter, metrics: dict, step_number: int, phase: str = "Validation"
@@ -37,14 +42,42 @@ def log_loss(
     """
     writer.add_scalar(f"{phase}/Loss", loss_value, step_number)
 
-import random
-import torch
-from torch.utils.data import DataLoader
-import torchvision
-from torch.utils.tensorboard import SummaryWriter
-from typing import Union
 
-__all__ = ["apply_color_map"]
+def log_graph(writer: SummaryWriter, model: torch.nn.Module, siamese: bool = False, device: str = "cuda", input_shape: tuple = (1, 3, 512, 512)):
+    """
+    Logs the model graph to TensorBoard. Supports both single-input and siamese models.
+
+    Args:
+        writer (SummaryWriter): The TensorBoard SummaryWriter.
+        model (torch.nn.Module): The model to log.
+        siamese (bool): Flag to indicate if the model is Siamese.
+        device (str): The device (cuda or cpu) where the model and tensors should be moved.
+        input_shape (tuple): The shape of the input tensor (default: (1, 3, 512, 512)).
+    """
+    model.to(device)  # Move model to the correct device
+    
+    # For Siamese models, we create two input tensors
+    if siamese:
+        x1 = torch.randn(*input_shape).to(device)
+        x2 = torch.randn(*input_shape).to(device)
+        writer.add_graph(model, (x1, x2))
+    else:
+        x1 = torch.randn(*input_shape).to(device)
+        writer.add_graph(model, x1)
+
+def log_hyperparams(writer: SummaryWriter, params: Dict[str, Any]):
+    """
+    Logs hyperparameters to TensorBoard.
+
+    Args:
+        writer (SummaryWriter): The TensorBoard SummaryWriter.
+        params (dict): Dictionary of hyperparameters to log.
+    """
+    # Log hyperparameters by iterating over the dictionary
+    for param, value in params.items():
+        writer.add_text(f'Hyperparameters/{param}', str(value))
+
+
 
 # Function to apply colors to masks (labels and predictions)
 def apply_color_map(mask, color_dict):

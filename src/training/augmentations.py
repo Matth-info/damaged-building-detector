@@ -196,7 +196,7 @@ def get_val_augmentation_pipeline(max_pixel_value=1, mean=None, std=None):
     transform = A.Compose([
         A.Normalize(mean=mean, std=std, max_pixel_value=max_pixel_value, p=1.0) if mean and std else A.NoOp(),
         ToTensorV2()
-    ], additional_targets= {
+    ], additional_targets={
                 'post_image' : 'image',
                 'post_mask': 'mask'
         }
