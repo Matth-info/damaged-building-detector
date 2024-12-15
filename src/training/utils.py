@@ -1,16 +1,26 @@
-import torch
-import torchvision
-import torch.nn as nn
-from torch.utils.tensorboard import SummaryWriter
-from torch.utils.data import Dataset, DataLoader
-from typing import Union
+# Core Python imports
 import os
-from prettytable import PrettyTable
-
 import random
+from collections import Counter
+from prettytable import PrettyTable
+from tqdm import tqdm
 from typing import Union, Dict, Any
 
-__all__ = ["apply_color_map"]
+# PyTorch imports
+import torch
+import torch.nn as nn
+from torch.utils.data import Dataset, DataLoader
+from torch.utils.data.sampler import WeightedRandomSampler
+from torch.utils.tensorboard import SummaryWriter
+
+# PyTorch Vision imports
+import torchvision
+
+# Third-party libraries
+import numpy as np
+
+
+__all__ = ["apply_color_map", "define_weighted_random_sampler"]
 
 
 def log_metrics(
@@ -231,6 +241,53 @@ def display_metrics(metrics, phase):
 
     print(table)
 
+############ Utils for dealing with class imbalanced datasets ########################
+def define_weighted_random_sampler(dataset, mask_key="post_mask", subset_size=None):
+    """
+    Define a WeightedRandomSampler for a segmentation dataset to address class imbalance.
+
+    Args:
+        dataset: A segmentation dataset where each sample includes an image and its corresponding mask.
+        mask_key: Key to access the mask in the dataset sample (default: "post_mask").
+        subset_size: Number of random samples to use for estimating class weights. If None, uses the full dataset.
+
+    Returns:
+        sampler: A WeightedRandomSampler for balanced class sampling.
+    """
+    # Determine subset of dataset to analyze (optional)
+    if subset_size is not None:
+        sampled_indices = random.sample(range(len(dataset)), min(len(dataset), subset_size))
+    else:
+        sampled_indices = range(len(dataset))
+
+    # Initialize a counter for pixel-level class frequencies
+    class_counts = Counter()
+
+    # Loop through the sampled subset of the dataset to count class frequencies in masks
+    for i in tqdm(sampled_indices, desc="Counting class frequencies"):
+        mask = dataset[i][mask_key]
+        mask_flat = mask.flatten().numpy()  # Flatten the mask to count pixel-level classes
+        class_counts.update(mask_flat)
+    
+    # Convert class counts to weights (inverse frequency)
+    total_pixels = sum(class_counts.values())
+    class_weights = {cls: total_pixels / (count + 1e-6) for cls, count in class_counts.items()}
+
+    # Assign a weight to each sample based on the class distribution in its mask
+    sample_weights = []
+    for i, input in tqdm(enumerate(dataset), desc="Assigning sample weights"):
+        mask = input[mask_key]
+        mask_flat = mask.flatten().numpy()
+        unique, counts = np.unique(mask_flat, return_counts=True)
+        pixel_weights = np.array([class_weights[cls] for cls in unique])
+        sample_weight = np.dot(counts, pixel_weights) / counts.sum()
+        sample_weights.append(sample_weight)
+
+    # Create the WeightedRandomSampler
+    sampler = WeightedRandomSampler(weights=sample_weights, num_samples=len(dataset), replacement=True)
+
+    return sampler
+        
 
 ############ Utils Functions for Fine Tuning Mask-R-CNN ##############################
 

@@ -15,6 +15,7 @@ from training.augmentations import (
     get_train_augmentation_pipeline,
     get_val_augmentation_pipeline,
 )
+from training.utils import define_weighted_random_sampler
 from models import SiameseResNetUNet
 from losses import DiceLoss, FocalLoss, Ensemble
 from metrics import f1_score, iou_score, balanced_accuracy, precision, recall
@@ -40,6 +41,7 @@ def parse_args():
     parser.add_argument("--mixed_precision", action="store_true", help="Enable mixed-precision training.")
     parser.add_argument("--origin_dir", type=str, default="../data/xDB/tier3", help="Local path to xDB Dataset.")
     parser.add_argument("--seed", type=int, default=42, help="Define seed")
+    parser.add_argument("--device", type=str, default="cuda", help="Define Device : 'cuda' or 'cpu'")
     return parser.parse_args()
 
 
@@ -51,8 +53,10 @@ if __name__ == '__main__':
     for key, value in args_dict.items():
         logging.info(f"{key}: {value}")
 
-
     origin_dir = args.origin_dir
+    device = args.device
+    val_ratio = 0.1
+    test_ratio = 0.1
 
     # Data Preparation
     data_train = xDB_Siamese_Dataset(
@@ -60,8 +64,8 @@ if __name__ == '__main__':
         mode=args.mode,
         transform=get_train_augmentation_pipeline(image_size=(512, 512), max_pixel_value=1,  mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225)),
         type="train",
-        val_ratio=0.1,
-        test_ratio=0.1,
+        val_ratio=val_ratio,
+        test_ratio=test_ratio,
         seed=args.seed
     )
 
@@ -70,8 +74,8 @@ if __name__ == '__main__':
         mode=args.mode,
         transform=get_val_augmentation_pipeline(max_pixel_value=1, mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225)),
         type="val",
-        val_ratio=0.1,
-        test_ratio=0.1,
+        val_ratio=val_ratio,
+        test_ratio=test_ratio,
         seed=args.seed
     )
 
@@ -80,8 +84,8 @@ if __name__ == '__main__':
         mode=args.mode,
         transform=get_val_augmentation_pipeline(max_pixel_value=1, mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225)),
         type="test",
-        val_ratio=0.1,
-        test_ratio=0.1,
+        val_ratio=val_ratio,
+        test_ratio=test_ratio,
         seed=args.seed
     )
 
@@ -92,16 +96,19 @@ if __name__ == '__main__':
         backbone_name=args.backbone,
         pretrained=args.pretrained,
         freeze_backbone=args.freeze_backbone,
+        mode="conc"
     )
 
     if torch.cuda.device_count() > 1:
         print(f"Using {torch.cuda.device_count()} GPUs with DataParallel")
         model = torch.nn.DataParallel(model)
 
-    model.to("cuda")
+    model.to(device)
 
     # Dataloaders
-    train_dl = DataLoader(data_train, batch_size=args.batch_size, shuffle=True, num_workers=8, pin_memory=True)
+    # Define a Weighted Random Sampler to tackle heavy class imbalance 
+    sampler = define_weighted_random_sampler(dataset=data_train, mask_key="post_mask", subset_size=200)
+    train_dl = DataLoader(data_train, batch_size=args.batch_size, num_workers=8, pin_memory=True, sampler=sampler)
     val_dl = DataLoader(data_val, batch_size=args.batch_size, shuffle=False, num_workers=8, pin_memory=True)
 
     # Loss and Optimizer
@@ -110,19 +117,18 @@ if __name__ == '__main__':
 
     # building, full_damage, simple_damage, change_detection"
     if args.mode == "full_damage":
-        class_weights = [1.0, 10.0, 30.0, 30.0, 30.0]
+        class_weights = [0.05, 1.0, 1.0, 3.0, 3.0]
     elif args.mode == "simple_damage":
-        class_weights = [1.0, 10.0, 30.0]
+        class_weights = [0.05, 1.0, 1.0]
     elif args.mode == "change_detection":
-        class_weights = [1.0, 10.0]
+        class_weights = [0.05, 1.0]
 
-    
     optimizer = optim.AdamW(params=filter(lambda p: p.requires_grad, model.parameters()), lr=args.learning_rate, weight_decay=1e-5)
     scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=50, eta_min=0.0001)
-    criterion = torch.nn.CrossEntropyLoss(weight=torch.tensor(class_weights), reduction='mean').to("cuda")
+    criterion = torch.nn.CrossEntropyLoss(weight=torch.tensor(class_weights), reduction='mean').to(device)
 
     # Metrics
-    metrics = [balanced_accuracy, f1_score, iou_score, precision, recall]
+    metrics = [balanced_accuracy, f1_score, iou_score]
 
     # Early Stopping
     early_stopping_params = {"patience": 10, "trigger_times": 3}
@@ -153,11 +159,12 @@ if __name__ == '__main__':
         is_mixed_precision=args.mixed_precision,
         reduction=reduction,
         class_weights=class_weights,
-        siamese=True
+        siamese=True,
+        device=device
     )
 
     # Testing
-    test_dl = DataLoader(data_test, batch_size=5, shuffle=True)
+    test_dl = DataLoader(data_test, batch_size=8, shuffle=True)
 
     epoch_tloss, test_metrics = testing(
         model,
