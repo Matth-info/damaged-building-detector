@@ -107,7 +107,7 @@ if __name__ == '__main__':
 
     # Dataloaders
     # Define a Weighted Random Sampler to tackle heavy class imbalance 
-    sampler = define_weighted_random_sampler(dataset=data_train, mask_key="post_mask", subset_size=200)
+    sampler, _ = define_weighted_random_sampler(dataset=data_train, mask_key="post_mask", subset_size=200)
     train_dl = DataLoader(data_train, batch_size=args.batch_size, num_workers=8, pin_memory=True, sampler=sampler)
     val_dl = DataLoader(data_val, batch_size=args.batch_size, shuffle=False, num_workers=8, pin_memory=True)
 

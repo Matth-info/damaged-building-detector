@@ -574,7 +574,7 @@ def train(
         lr_scheduler = scheduler(optimizer=optimizer_ft, **params_sc) \
             if scheduler.__class__.__name__ == "type" else scheduler
 
-    best_avg_metric = 0
+    best_val_loss = 10e6
     overall_start_time = time.time()
     patience, trigger_times = early_stopping_params["patience"], early_stopping_params["trigger_times"]
     max_images = 5
@@ -614,13 +614,9 @@ def train(
         log_hyperparams(writer, hyperparams)
         logging.info("Hyperparameters have been logged")
 
-
         for epoch in range(start_epoch, nb_epochs):
             start_time = time.time()
             
-            lr_epoch = lr_scheduler.get_last_lr()[0] 
-            writer.add_scalar("Learning Rate", lr_epoch, epoch)
-
             # Train phase
             epoch_loss, epoch_metrics = training_epoch(
                 model=model, 
@@ -662,6 +658,8 @@ def train(
             )
 
             # Scheduler step after training
+            lr_epoch = lr_scheduler.get_last_lr()[0] 
+            writer.add_scalar("Learning Rate", lr_epoch, epoch)
             lr_scheduler.step()
 
             if verbose:
@@ -711,16 +709,16 @@ def train(
                 )
 
             # Save best model and early stopping logic
-            avg_metric = np.mean([value for _, value in epoch_vmetrics.items()])
-            if avg_metric > best_avg_metric:
+            if best_val_loss > epoch_vloss:
                 if verbose:
-                    print("Saving best model")
+                    logging.info("Saving best model")
                 trigger_times = 0
+                best_val_loss = epoch_vloss
                 save_model(model, ckpt_path=model_dir, name=f"{experiment_name}_{timestamp}_best_model")
             else:
                 trigger_times += 1
                 if trigger_times >= patience:
-                    print("Early stopping")
+                    logging.info("Early stopping")
                     break
 
         total_time = time.time() - overall_start_time

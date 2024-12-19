@@ -9,3 +9,6 @@ data/Open-cities
 data/Puerto_Rico_Dataset
 
 *.pyc
+
+# Ignore logs 
+./runs

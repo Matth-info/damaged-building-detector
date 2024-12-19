@@ -4,6 +4,7 @@ from .Segformer import Segformer
 from .Siamese_ResNet_Unet import SiameseResNetUNet
 from .Unet import UNet
 from .MaskRCNN import Maskrcnn
+from .Tiny_CD import TinyCD
 from .Ensemble import EnsembleModel
 
 __all__ = ["AutoEncoder", 
@@ -12,5 +13,6 @@ __all__ = ["AutoEncoder",
            "UNet", 
            "Maskrcnn",
            "SiameseResNetUNet",
-           "EnsembleModel"
+           "EnsembleModel",
+           "TinyCD"
            ]

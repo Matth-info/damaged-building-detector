@@ -156,7 +156,7 @@ def log_images_to_tensorboard(
     # Generate predictions
     with torch.no_grad():
         if siamese:
-            predictions = model(x1=x1, x2=x2)  # Forward pass for Siamese model
+            predictions = model(x1, x2)  # Forward pass for Siamese model
         else:
             predictions = model(x)  # Forward pass for single input model
         predictions = torch.argmax(predictions, dim=1)
@@ -253,6 +253,7 @@ def define_weighted_random_sampler(dataset, mask_key="post_mask", subset_size=No
 
     Returns:
         sampler: A WeightedRandomSampler for balanced class sampling.
+        class_weights: Inversely propotional class weights for imbalance dataset. 
     """
     # Determine subset of dataset to analyze (optional)
     if subset_size is not None:
@@ -286,7 +287,7 @@ def define_weighted_random_sampler(dataset, mask_key="post_mask", subset_size=No
     # Create the WeightedRandomSampler
     sampler = WeightedRandomSampler(weights=sample_weights, num_samples=len(dataset), replacement=True)
 
-    return sampler
+    return sampler, class_weights
         
 
 ############ Utils Functions for Fine Tuning Mask-R-CNN ##############################

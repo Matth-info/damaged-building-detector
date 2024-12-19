@@ -18,6 +18,7 @@ from .functional import (
     positive_likelihood_ratio,
     negative_likelihood_ratio,
 )
+from .utils import compute_model_class_performance
 
 __all__ = [
     "get_stats",
@@ -38,4 +39,5 @@ __all__ = [
     "false_omission_rate",
     "positive_likelihood_ratio",
     "negative_likelihood_ratio",
+    "compute_model_class_performance"
 ]
