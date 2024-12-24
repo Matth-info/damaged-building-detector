@@ -20,7 +20,7 @@ import torchvision
 import numpy as np
 
 
-__all__ = ["apply_color_map", "define_weighted_random_sampler"]
+__all__ = ["apply_color_map", "define_weighted_random_sampler", "define_class_weights"]
 
 
 def log_metrics(
@@ -242,7 +242,7 @@ def display_metrics(metrics, phase):
     print(table)
 
 ############ Utils for dealing with class imbalanced datasets ########################
-def define_weighted_random_sampler(dataset, mask_key="post_mask", subset_size=None):
+def define_weighted_random_sampler(dataset, mask_key="post_mask", subset_size=None, seed: int = None):
     """
     Define a WeightedRandomSampler for a segmentation dataset to address class imbalance.
 
@@ -250,11 +250,12 @@ def define_weighted_random_sampler(dataset, mask_key="post_mask", subset_size=No
         dataset: A segmentation dataset where each sample includes an image and its corresponding mask.
         mask_key: Key to access the mask in the dataset sample (default: "post_mask").
         subset_size: Number of random samples to use for estimating class weights. If None, uses the full dataset.
-
+        seed : seed number 
     Returns:
         sampler: A WeightedRandomSampler for balanced class sampling.
         class_weights: Inversely propotional class weights for imbalance dataset. 
     """
+    if seed is not None : random.seed(seed) 
     # Determine subset of dataset to analyze (optional)
     if subset_size is not None:
         sampled_indices = random.sample(range(len(dataset)), min(len(dataset), subset_size))
@@ -289,6 +290,39 @@ def define_weighted_random_sampler(dataset, mask_key="post_mask", subset_size=No
 
     return sampler, class_weights
         
+def define_class_weights(dataset, mask_key="post_mask", subset_size=None, seed: int = None):
+    """
+    Define classweights for a segmentation dataset to address class imbalance.
+
+    Args:
+        dataset: A segmentation dataset where each sample includes an image and its corresponding mask.
+        mask_key: Key to access the mask in the dataset sample (default: "post_mask").
+        subset_size: Number of random samples to use for estimating class weights. If None, uses the full dataset.
+        seed : seed number 
+    Returns:
+        sampler: A WeightedRandomSampler for balanced class sampling.
+        class_weights: Inversely propotional class weights for imbalance dataset. 
+    """
+    if seed is not None : random.seed(seed) 
+    # Determine subset of dataset to analyze (optional)
+    if subset_size is not None:
+        sampled_indices = random.sample(range(len(dataset)), min(len(dataset), subset_size))
+    else:
+        sampled_indices = range(len(dataset))
+
+    # Initialize a counter for pixel-level class frequencies
+    class_counts = Counter()
+
+    # Loop through the sampled subset of the dataset to count class frequencies in masks
+    for i in tqdm(sampled_indices, desc="Counting class frequencies"):
+        mask = dataset[i][mask_key]
+        mask_flat = mask.flatten().numpy()  # Flatten the mask to count pixel-level classes
+        class_counts.update(mask_flat)
+    
+    # Convert class counts to weights (inverse frequency)
+    total_pixels = sum(class_counts.values())
+    class_weights = {cls: total_pixels / (count + 1e-6) for cls, count in class_counts.items()}
+    return class_weights
 
 ############ Utils Functions for Fine Tuning Mask-R-CNN ##############################
 

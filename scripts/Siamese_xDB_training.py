@@ -15,18 +15,19 @@ from training.augmentations import (
     get_train_augmentation_pipeline,
     get_val_augmentation_pipeline,
 )
-from training.utils import define_weighted_random_sampler
-from models import SiameseResNetUNet
+from training.utils import define_weighted_random_sampler, define_class_weights
+from models import SiameseResNetUNet, TinyCD
 from losses import DiceLoss, FocalLoss, Ensemble
-from metrics import f1_score, iou_score, balanced_accuracy, precision, recall
+from metrics import iou_score, f1_score, precision, recall, false_negative_rate, false_positive_rate
 
 
 def parse_args():
-    parser = argparse.ArgumentParser(description="Train a ResNet-based U-Net model for building segmentation.")
+    parser = argparse.ArgumentParser(description="Train a ResNet-based U-Net model or TinyCD model for building segmentation.")
     
     # Experiment settings
     parser.add_argument("--experiment_name", type=str, default="Experiment", help="Name of the experiment for logging.")
-    parser.add_argument("--backbone", type=str, default="resnet18", help="ResNet backbone to use (e.g., resnet18, resnet34, resnet50).")
+    parser.add_argument("--model", type=str, help="Model type available : TinyCD, ResNet_Unet")
+    parser.add_argument("--backbone", type=str, default="resnet18", help="ResNet backbone to use (e.g., resnet18, resnet34, resnet50) / efficientnet_b4")
     parser.add_argument("--batch_size", type=int, default=8, help="Batch size for training and validation.")
     parser.add_argument("--in_channels", type=int, default=3, help="Number of input channels")
     parser.add_argument("--out_channels", type=int, default=2, help="Number of output channels")
@@ -90,54 +91,84 @@ if __name__ == '__main__':
     )
 
     # Model Initialization
-    model = SiameseResNetUNet(
-        in_channels=args.in_channels,
-        out_channels=args.out_channels,
-        backbone_name=args.backbone,
-        pretrained=args.pretrained,
-        freeze_backbone=args.freeze_backbone,
-        mode="conc"
-    )
+    if args.model == "ResNet_Unet":
+        model = SiameseResNetUNet(
+            in_channels=args.in_channels,
+            out_channels=args.out_channels,
+            backbone_name=args.backbone,
+            pretrained=args.pretrained,
+            freeze_backbone=args.freeze_backbone,
+            mode="conc"
+        )
+    elif args.model == "TinyCD":
+        model = TinyCD(
+            bkbn_name=args.backbone,
+            pretrained=args.pretrained,
+            output_layer_bkbn="3",
+            out_channels=args.out_channels,
+            freeze_backbone=args.freeze_backbone
+        )
+    else:
+        raise ValueError("The chosen model is not currently available")
 
     if torch.cuda.device_count() > 1:
         print(f"Using {torch.cuda.device_count()} GPUs with DataParallel")
         model = torch.nn.DataParallel(model)
 
     model.to(device)
-
     # Dataloaders
     # Define a Weighted Random Sampler to tackle heavy class imbalance 
-    sampler, _ = define_weighted_random_sampler(dataset=data_train, mask_key="post_mask", subset_size=200)
+    sampler, class_weights = define_weighted_random_sampler(
+        dataset=data_train, 
+        mask_key="post_mask", 
+        subset_size=100,
+        seed=args.seed
+    )
+
+    """class_weights = define_class_weights(
+        dataset=data_train, 
+        mask_key='post_mask', 
+        subset_size=100,
+        seed=args.seed)"""
+    
+    print("class weights : ", class_weights)
+    class_weights = [v for _, v in class_weights.items()]
+
     train_dl = DataLoader(data_train, batch_size=args.batch_size, num_workers=8, pin_memory=True, sampler=sampler)
-    val_dl = DataLoader(data_val, batch_size=args.batch_size, shuffle=False, num_workers=8, pin_memory=True)
+    val_dl = DataLoader(data_val, batch_size=args.batch_size, shuffle=True, num_workers=8, pin_memory=True)
 
     # Loss and Optimizer
     mode = "multiclass"
     reduction = "weighted"
 
-    # building, full_damage, simple_damage, change_detection"
+    """# building, full_damage, simple_damage, change_detection"
     if args.mode == "full_damage":
         class_weights = [0.05, 1.0, 1.0, 3.0, 3.0]
     elif args.mode == "simple_damage":
         class_weights = [0.05, 1.0, 1.0]
     elif args.mode == "change_detection":
         class_weights = [0.05, 1.0]
+    """
 
     optimizer = optim.AdamW(params=filter(lambda p: p.requires_grad, model.parameters()), lr=args.learning_rate, weight_decay=1e-5)
-    scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=50, eta_min=0.0001)
-    criterion = torch.nn.CrossEntropyLoss(weight=torch.tensor(class_weights), reduction='mean').to(device)
-
+    scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=args.num_epochs)
+    
+    dice_loss = DiceLoss(mode=mode)
+    # focal_loss = FocalLoss(mode=mode, gamma=2)
+    ce = torch.nn.CrossEntropyLoss(weight=torch.tensor(class_weights), reduction='mean').to(device)
+    criterion = Ensemble(list_losses=[ce, dice_loss], weights = [0.5, 0.5])
+    # criterion = ce
     # Metrics
-    metrics = [balanced_accuracy, f1_score, iou_score]
+    metrics = [f1_score, iou_score, precision, recall]
 
     # Early Stopping
-    early_stopping_params = {"patience": 10, "trigger_times": 3}
+    early_stopping_params = {"patience": 3, "trigger_times": 0}
 
     # Training
     torch.cuda.empty_cache()
 
     train(
-        model,
+        model=model,
         train_dl=train_dl,
         valid_dl=val_dl,
         optimizer=optimizer,
@@ -152,6 +183,7 @@ if __name__ == '__main__':
         log_dir=args.log_dir,
         model_dir=args.model_dir,
         early_stopping_params=early_stopping_params,
+        checkpoint_interval=10,
         image_key="post_image",
         mask_key="post_mask",
         training_log_interval=2,
@@ -167,7 +199,7 @@ if __name__ == '__main__':
     test_dl = DataLoader(data_test, batch_size=8, shuffle=True)
 
     epoch_tloss, test_metrics = testing(
-        model,
+        model=model,
         test_dataloader=test_dl,
         loss_fn=criterion,
         metrics=metrics,

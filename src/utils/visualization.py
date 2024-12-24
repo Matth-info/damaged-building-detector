@@ -93,8 +93,9 @@ def display_semantic_predictions_batch(images,
             print(f"Saved: {file_path}")
         
         plt.show()
+    
 
-def display_instance_predictions_batch(images, mask_predictions, score_threshold=0.6, max_images=5, display: List[str]=None ):
+def display_instance_predictions_batch(images, mask_predictions, score_threshold=0.6, max_images=5, display: List[str]=None):
     """
     Visualizes predictions from the model on a given dataset.
 
@@ -144,4 +145,100 @@ def display_instance_predictions_batch(images, mask_predictions, score_threshold
         plt.figure(figsize=(12, 4))
         plt.imshow(output_image.permute(1, 2, 0)) 
         plt.axis('off')
+        plt.show()
+
+
+def display_semantic_siamese_predictions_batch(
+    pre_images,
+    post_images,
+    mask_predictions,
+    mask_labels,
+    normalized=None,
+    folder_path=None
+):
+    """
+    Displays a batch of pre-event and post-event images alongside their predicted masks 
+    and ground truth masks, and optionally saves the images in a folder.
+    
+    Args:
+        pre_images (torch.Tensor or numpy.ndarray): Batch of pre-event images, shape (N, C, H, W) or (N, H, W, C).
+        post_images (torch.Tensor or numpy.ndarray): Batch of post-event images, shape (N, C, H, W) or (N, H, W, C).
+        mask_predictions (torch.Tensor or numpy.ndarray): Batch of predicted masks, shape (N, H, W) or (N, H, W, C).
+        mask_labels (torch.Tensor or numpy.ndarray): Batch of ground truth masks, shape (N, H, W) or (N, H, W, C).
+        normalized (dict): Dictionary containing "mean" and "std" for unnormalization.
+        folder_path (str): Path to the folder where images will be saved. If None, images are not saved.
+    """
+    
+    # Determine normalization parameters
+    bool_normalized = normalized is not None
+    mean, std = normalized.get("mean"), normalized.get("std") if bool_normalized else (0, 1)
+
+    # Convert tensors to numpy arrays if needed
+    if isinstance(pre_images, torch.Tensor):
+        pre_images = pre_images.detach().cpu().numpy()
+        post_images = post_images.detach().cpu().numpy()
+    if isinstance(mask_predictions, torch.Tensor):
+        mask_predictions = mask_predictions.detach().cpu().numpy()
+    if isinstance(mask_labels, torch.Tensor):
+        mask_labels = mask_labels.detach().cpu().numpy()
+
+    batch_size = pre_images.shape[0]  # Number of samples in the batch
+
+    # Create the output folder if folder_path is provided
+    if folder_path is not None:
+        os.makedirs(folder_path, exist_ok=True)
+
+    for i in range(batch_size):
+        pre_image = pre_images[i]
+        post_image = post_images[i]
+        mask_prediction = mask_predictions[i]
+        mask_label = mask_labels[i]
+
+        # Handle channel-first images (C, H, W) and unnormalize if needed
+        def process_image(image):
+            if image.ndim == 3 and image.shape[0] == 3:  # RGB
+                image = np.transpose(image, (1, 2, 0))  # Convert to (H, W, C)
+                return unormalize_images(image, mean, std) if bool_normalized else image
+            elif image.ndim == 3 and image.shape[0] == 1:  # Grayscale
+                return image[0]  # Remove channel dimension
+            return image
+
+        pre_image = process_image(pre_image)
+        post_image = process_image(post_image)
+
+        # Create the plot
+        plt.figure(figsize=(16, 8))
+
+        # Display pre-event image
+        plt.subplot(1, 4, 1)
+        plt.imshow(pre_image)
+        plt.axis('off')
+        plt.title("Pre-Event Image")
+
+        # Display post-event image
+        plt.subplot(1, 4, 2)
+        plt.imshow(post_image)
+        plt.axis('off')
+        plt.title("Post-Event Image")
+
+        # Show the predicted mask
+        plt.subplot(1, 4, 3)
+        plt.imshow(mask_prediction, cmap='jet', interpolation='none')
+        plt.axis('off')
+        plt.title("Predicted Mask")
+
+        # Show the ground truth mask
+        plt.subplot(1, 4, 4)
+        plt.imshow(mask_label, cmap='jet', interpolation='none')
+        plt.axis('off')
+        plt.title("Ground Truth Mask")
+
+        plt.tight_layout()
+
+        # Save the plot if folder_path is provided
+        if folder_path is not None:
+            file_path = os.path.join(folder_path, f"sample_{i + 1}.png")
+            plt.savefig(file_path)
+            print(f"Saved: {file_path}")
+
         plt.show()

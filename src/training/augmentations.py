@@ -166,7 +166,7 @@ def get_train_augmentation_pipeline(image_size=(512, 512), max_pixel_value=1, me
             # Scale (+-10%) and rotation (+-10 degrees)
             A.ShiftScaleRotate(shift_limit=0, scale_limit=0.1, rotate_limit=10, p=0.5), 
             # Mask dropout
-            A.CoarseDropout(max_holes=4, max_height=64, max_width=64, p=0.5),  
+            #A.CoarseDropout(max_holes=4, max_height=64, max_width=64, p=0.5),  
             OneOf([
                 A.GridDistortion(p=0.5),
 
