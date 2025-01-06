@@ -1,6 +1,8 @@
 import torch
 import numpy as np
 from sklearn.metrics import multilabel_confusion_matrix, precision_score, recall_score, f1_score
+from training.augmentations import augmentation_test_time, augmentation_test_time_siamese
+import albumentations as A
 from prettytable import PrettyTable
 from tqdm import tqdm 
 
@@ -14,6 +16,7 @@ def compute_model_class_performance(
         image_key="image",
         mask_key="mask",
         average_mode="macro",
+        tta=False,
         output_file="class_performance_metrics.txt"
 ):
     """
@@ -29,6 +32,7 @@ def compute_model_class_performance(
         image_key (str): Key for accessing images in the dataloader batch.
         mask_key (str): Key for accessing masks in the dataloader batch.
         average_mode (str): Averaging mode for overall metrics ('macro', 'micro', etc.).
+        tta (bool): Run Test Time Augmentation 
         output_file (str): Path to the file where metrics will be stored.
 
     Returns:
@@ -47,11 +51,37 @@ def compute_model_class_performance(
                     pre_image = batch["pre_image"].to(device)
                     post_image = batch["post_image"].to(device)
                     targets = batch[mask_key].to(device)
-                    outputs = model(pre_image, post_image)
+
+                    if tta:
+                        outputs = augmentation_test_time_siamese(
+                            model=model, 
+                            images_1=pre_image, 
+                            images_2=post_image, 
+                            list_augmentations=[
+                                                A.HorizontalFlip(p=1.0),  # Horizontal flip
+                                                A.VerticalFlip(p=1.0)    # Vertical flip
+                                            ],
+                            aggregation="mean", 
+                            device=device
+                            )
+                    else:
+                        outputs = model(pre_image, post_image)
                 else:
                     images = batch[image_key].to(device)
                     targets = batch[mask_key].to(device)
-                    outputs = model(images)
+                    if tta:
+                        outputs = augmentation_test_time(
+                            model=model, 
+                            images=images, 
+                            list_augmentations=[
+                                                A.HorizontalFlip(p=1.0),  # Horizontal flip
+                                                A.VerticalFlip(p=1.0)    # Vertical flip
+                                            ],
+                            aggregation="mean", 
+                            device=device
+                        )
+                    else: 
+                        outputs = model(images)
 
                 preds = torch.argmax(outputs, dim=1).cpu().numpy()
                 targets = targets.cpu().numpy()
@@ -87,16 +117,7 @@ def compute_model_class_performance(
     recall_overall = recall_score(all_targets, all_preds, labels=unique_classes, average=average_mode, zero_division=0)
     f1_overall = f1_score(all_targets, all_preds, labels=unique_classes, average=average_mode, zero_division=0)
 
-    with open(output_file, "w") as f:
-        f.write("Per-Class Performance Metrics:\n")
-        f.write(str(table) + "\n")
-        f.write("-" * 40 + "\n")
-        f.write("Overall Performance Metrics:\n")
-        f.write(f"  Precision ({average_mode}): {precision_overall:.4f}\n")
-        f.write(f"  Recall ({average_mode}):    {recall_overall:.4f}\n")
-        f.write(f"  F1 Score ({average_mode}):  {f1_overall:.4f}\n")
-
-    print("Per-Class Performance Metrics:")
+    print(f"Per-Class Performance Metrics ({'TTA' if tta else ''}):")
     print(table)
     print("-" * 40)
     print("Overall Performance Metrics:")
@@ -104,3 +125,14 @@ def compute_model_class_performance(
     print(f"  Recall ({average_mode}):    {recall_overall:.4f}")
     print(f"  F1 Score ({average_mode}):  {f1_overall:.4f}")
     print(f"Metrics have been saved to {output_file}")
+    
+    with open(output_file, "w") as f:
+        f.write(f"Per-Class Performance Metrics ({'TTA' if tta else ''}):\n")
+        f.write(str(table) + "\n")
+        f.write("-" * 40 + "\n")
+        f.write("Overall Performance Metrics:\n")
+        f.write(f"  Precision ({average_mode}): {precision_overall:.4f}\n")
+        f.write(f"  Recall ({average_mode}):    {recall_overall:.4f}\n")
+        f.write(f"  F1 Score ({average_mode}):  {f1_overall:.4f}\n")
+
+    

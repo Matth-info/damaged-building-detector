@@ -1069,8 +1069,8 @@ class Levir_cd_dataset(Dataset):
         label_img = Image.open(self.L_paths[index]).convert('L')  # Label mask (grayscale)
 
         # Convert images to numpy arrays (Albumentations expects this)
-        pre_image = (np.array(A_img)/255.0).astype(np.float32)
-        post_image = (np.array(B_img)/255.0).astype(np.float32)
+        pre_image = (np.array(A_img) / 255.0).astype(np.float32)
+        post_image = (np.array(B_img) / 255.0).astype(np.float32)
         mask = np.array(label_img).astype(np.uint8)  # Convert to binary mask (0 or 1)
         mask = np.where(mask == 255, 1, 0)
 
@@ -1083,7 +1083,7 @@ class Levir_cd_dataset(Dataset):
         else:
             pre_image = torch.from_numpy(pre_image).permute(2, 0, 1).float() 
             post_image = torch.from_numpy(post_image).permute(2, 0, 1).float()
-            mask = torch.from_numpy(mask).long() if mask is not None else None
+            mask = torch.from_numpy(mask).long()
 
         return {
             "pre_image": pre_image,

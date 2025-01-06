@@ -10,10 +10,6 @@ data/Puerto_Rico_Dataset
 data/Levir-cd 
 data/Levir-cd-v2
 
-
-*.pyc
-
 # Ignore logs 
 ./runs
-*.pyc
 notebooks/notebook_test.ipynb

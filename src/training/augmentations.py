@@ -157,19 +157,17 @@ def augmentation_test_time_siamese(
 
 
 #### Building Segmentation Model Augmentation Pipeline #####
-def get_train_augmentation_pipeline(image_size=(512, 512), max_pixel_value=1, mean=None, std=None):
+def get_train_augmentation_pipeline(image_size=(256,256), max_pixel_value=1, mean=None, std=None):
     transform = A.Compose([
             # Resize images and masks
-            A.RandomResizedCrop(height=image_size[0], width=image_size[1], scale=(0.7, 1), p=1.0),  # Ensure both image and mask are resized
+            A.RandomResizedCrop(height=image_size[0], width=image_size[1], scale=(0.8, 1), p=1.0) if image_size is not None else A.NoOp(),  # Ensure both image and mask are resized
             # Normalize images
             A.Normalize(mean=mean, std=std, max_pixel_value=max_pixel_value, p=1.0) if mean and std else A.NoOp(),
             # Scale (+-10%) and rotation (+-10 degrees)
             A.ShiftScaleRotate(shift_limit=0, scale_limit=0.1, rotate_limit=10, p=0.5), 
             # Mask dropout
-            #A.CoarseDropout(max_holes=4, max_height=64, max_width=64, p=0.5),  
+            # A.CoarseDropout(max_holes=4, max_height=64, max_width=64, p=0.5),  
             OneOf([
-                A.GridDistortion(p=0.5),
-
                 A.HorizontalFlip(p=0.5),
                 # Random vertical flip
                 A.VerticalFlip(p=0.5),
@@ -186,7 +184,7 @@ def get_train_augmentation_pipeline(image_size=(512, 512), max_pixel_value=1, me
                 A.RGBShift(p=0.5),                 # RGB adjustment
             ], p=1),
             ToTensorV2()
-        ], additional_targets= {
+        ], additional_targets = {
                 'post_image' : 'image',
                 'post_mask': 'mask'
         })
