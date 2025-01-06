@@ -185,7 +185,7 @@ def _get_backbone(
 ) -> ModuleList:
     # The whole model:
     entire_model = getattr(torchvision.models, bkbn_name)(
-        pretrained=pretrained
+        weights="DEFAULT" if pretrained else None
     ).features
 
     # Slicing it:
