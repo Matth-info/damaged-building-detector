@@ -160,13 +160,13 @@ def augmentation_test_time_siamese(
 def get_train_augmentation_pipeline(image_size=(512, 512), max_pixel_value=1, mean=None, std=None):
     transform = A.Compose([
             # Resize images and masks
-            A.RandomResizedCrop(height=image_size[0], width=image_size[1], scale=(0.8, 1), p=1.0),  # Ensure both image and mask are resized
+            A.RandomResizedCrop(height=image_size[0], width=image_size[1], scale=(0.7, 1), p=1.0),  # Ensure both image and mask are resized
             # Normalize images
             A.Normalize(mean=mean, std=std, max_pixel_value=max_pixel_value, p=1.0) if mean and std else A.NoOp(),
             # Scale (+-10%) and rotation (+-10 degrees)
             A.ShiftScaleRotate(shift_limit=0, scale_limit=0.1, rotate_limit=10, p=0.5), 
             # Mask dropout
-            A.CoarseDropout(max_holes=4, max_height=64, max_width=64, p=0.5),  
+            #A.CoarseDropout(max_holes=4, max_height=64, max_width=64, p=0.5),  
             OneOf([
                 A.GridDistortion(p=0.5),
 
@@ -180,11 +180,11 @@ def get_train_augmentation_pipeline(image_size=(512, 512), max_pixel_value=1, me
             ], p = 1), 
             OneOf([
                 A.RandomBrightnessContrast(p=0.5) # Random brightness and contrast change
-            ], p=0.8),
+            ], p=1),
             OneOf([
                 A.HueSaturationValue(p=0.5),       # HSV adjustment
                 A.RGBShift(p=0.5),                 # RGB adjustment
-            ], p=0.8),
+            ], p=1),
             ToTensorV2()
         ], additional_targets= {
                 'post_image' : 'image',
@@ -206,12 +206,13 @@ def get_val_augmentation_pipeline(image_size=None, max_pixel_value=1, mean=None,
 
 # xDB Tier3 Mean: [0.349 0.354 0.268], Std: [0.114 0.102 0.094]
 # ImageNet Mean: [0.485, 0.456, 0.406], Std = [0.229, 0.224, 0.225]
+# Levir-CD Mean: [0.387 , 0.382, 0.325], Std = [0.158 ,0.150, 0.138]
 
 ###### AutoEncoder Augmentation Pipeline #######
-def get_train_autoencoder_augmentation_pipeline(image_size=(512, 512)):
+def get_train_autoencoder_augmentation_pipeline(image_size=None):
     return A.Compose(
         [
-            A.Resize(image_size[0], image_size[1]),
+            A.Resize(image_size[0], image_size[1]) if image_size is not None else A.NoOp(),
             A.HorizontalFlip(p=0.5),  # Random horizontal flip with 50% probability
             A.VerticalFlip(p=0.5),    # Random vertical flip with 50% probability
             A.RandomRotate90(p=0.5),  # Random 90 degree rotation with 50% probability

@@ -191,8 +191,8 @@ def log_images_to_tensorboard(
     if siamese:
         input_grid_1 = torchvision.utils.make_grid(inputs_1, normalize=True, scale_each=True)
         input_grid_2 = torchvision.utils.make_grid(inputs_2, normalize=True, scale_each=True)
-        writer.add_image(tag="Inputs/Pre_Disaster", img_tensor=input_grid_1, global_step=epoch)
-        writer.add_image(tag="Inputs/Post_Disaster", img_tensor=input_grid_2, global_step=epoch)
+        writer.add_image(tag="Inputs/Pre_Image", img_tensor=input_grid_1, global_step=epoch)
+        writer.add_image(tag="Inputs/Post_Image", img_tensor=input_grid_2, global_step=epoch)
     else:
         input_grid = torchvision.utils.make_grid(inputs, normalize=False, scale_each=True)
         writer.add_image(tag="Inputs", img_tensor=input_grid, global_step=epoch)

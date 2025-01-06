@@ -2,6 +2,7 @@ import torch
 import numpy as np
 from sklearn.metrics import multilabel_confusion_matrix, precision_score, recall_score, f1_score
 from prettytable import PrettyTable
+from tqdm import tqdm 
 
 def compute_model_class_performance(
         model,
@@ -40,25 +41,26 @@ def compute_model_class_performance(
     total_pixels = 0
 
     with torch.no_grad():
-        for batch in dataloader:
-            if siamese:
-                pre_image = batch["pre_image"].to(device)
-                post_image = batch["post_image"].to(device)
-                targets = batch["post_mask"].to(device)
-                outputs = model(pre_image, post_image)
-            else:
-                images = batch[image_key].to(device)
-                targets = batch[mask_key].to(device)
-                outputs = model(images)
+        with tqdm(dataloader, desc=f"Testing", unit="batch") as t:
+            for batch in t:
+                if siamese:
+                    pre_image = batch["pre_image"].to(device)
+                    post_image = batch["post_image"].to(device)
+                    targets = batch[mask_key].to(device)
+                    outputs = model(pre_image, post_image)
+                else:
+                    images = batch[image_key].to(device)
+                    targets = batch[mask_key].to(device)
+                    outputs = model(images)
 
-            preds = torch.argmax(outputs, dim=1).cpu().numpy()
-            targets = targets.cpu().numpy()
+                preds = torch.argmax(outputs, dim=1).cpu().numpy()
+                targets = targets.cpu().numpy()
 
-            all_preds.append(preds)
-            all_targets.append(targets)
+                all_preds.append(preds)
+                all_targets.append(targets)
 
-            correct_pixels += np.sum(preds == targets)
-            total_pixels += np.prod(targets.shape)
+                correct_pixels += np.sum(preds == targets)
+                total_pixels += np.prod(targets.shape)
 
     all_preds = np.concatenate([p.ravel() for p in all_preds])
     all_targets = np.concatenate([t.ravel() for t in all_targets])
