@@ -16,3 +16,4 @@ data/Levir-cd-v2
 # Ignore logs 
 ./runs
 *.pyc
+notebooks/notebook_test.ipynb
