@@ -4,7 +4,6 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
 from torch.utils.data import DataLoader
-from torch.utils.tensorboard import SummaryWriter
 from torch.amp import autocast, GradScaler
 from torch.nn.modules.loss import _Loss
 
@@ -15,13 +14,18 @@ from typing import List, Callable, Dict, Optional, Tuple
 from .utils import (
     log_metrics,
     log_loss,
-    log_images_to_tensorboard,
+    log_images_to_mlflow,
+    log_model,
     save_model,
     load_model,
     display_metrics,
-    log_hyperparams,
-    log_graph
+    custom_infer_signature,
+    save_checkpoint,
+    load_checkpoint,
+    initialize_optimizer_scheduler
 )
+
+from metrics import compute_model_class_performance
 
 from .augmentations import augmentation_test_time, augmentation_test_time_siamese
 import albumentations as A
@@ -35,8 +39,12 @@ from tqdm import tqdm
 # from custom metrics and losses
 from metrics import get_stats
 
+# mlflow 
+import mlflow
+
 # Configure logging
 logging.basicConfig(level=logging.INFO)
+
 
 def training_step(
     model: nn.Module,
@@ -291,7 +299,6 @@ def training_epoch(
     optimizer: optim.Optimizer,
     scheduler: Optional[optim.lr_scheduler._LRScheduler] = None,
     epoch_number: int = 0,
-    writer: Optional[SummaryWriter] = None,
     image_key: str = "image",
     mask_key: str = "mask",
     verbose: bool = True,
@@ -313,7 +320,6 @@ def training_epoch(
         optimizer (Optimizer): Optimizer for weight updates.
         scheduler (Optional[_LRScheduler]): Learning rate scheduler (optional).
         epoch_number (int): The current epoch number (0-indexed).
-        writer (Optional[SummaryWriter]): TensorBoard writer for logging (optional).
         image_key (str): Key to access input images in the batch.
         verbose (bool): Whether to log detailed information (default: True).
         training_log_interval (int): Interval at which to log metrics.
@@ -365,14 +371,13 @@ def training_epoch(
                     total_metrics[metric_name] += metrics_step[metric_name] * batch_size
 
             # Log intermediate results at intervals
-            if step % training_log_interval == 0 and writer:
+            if step % training_log_interval == 0:
                 step_metrics = {
                     name: value / max(1, interval_samples) for name, value in total_metrics.items()
                 }
                 step_number = epoch_number * steps_per_epoch + step
-                log_metrics(writer, metrics=step_metrics, step_number=step_number, phase="Training")
+                log_metrics(metrics=step_metrics, step_number=step_number, phase="Training")
                 log_loss(
-                    writer,
                     loss_value=running_loss / max(1, interval_samples),
                     step_number=step_number,
                     phase="Training",
@@ -407,7 +412,6 @@ def validation_epoch(
     valid_dl: DataLoader,
     loss_fn: nn.Module,
     epoch_number: int,
-    writer: SummaryWriter,
     metrics: List[Callable] = None,
     image_key: str = "image",
     mask_key: str = "mask",
@@ -428,7 +432,6 @@ def validation_epoch(
         valid_dl (DataLoader): The DataLoader for validation data.
         loss_fn (nn.Module): The loss function.
         epoch_number (int): The current epoch number (0-indexed).
-        writer (SummaryWriter): TensorBoard writer for logging.
         metrics (List[Callable]): A list of metrics to calculate during validation.
         image_key (str): Key to access input images in the batch.
         verbose (bool): Whether to log detailed information (default: True).
@@ -483,11 +486,10 @@ def validation_epoch(
                     name: value / max(1, interval_samples) for name, value in total_metrics.items()
                 }
                 step_number = epoch_number * steps_per_epoch + step
-                log_metrics(writer, metrics=step_metrics, step_number=step_number, phase="Validation")
+                log_metrics(metrics=step_metrics, step_number=step_number, phase="Validation")
 
                 # Log intermediate loss
                 log_loss(
-                    writer,
                     loss_value=running_loss / max(1, interval_samples),
                     step_number=step_number,
                     phase="Validation",
@@ -514,6 +516,7 @@ def train(
     model: nn.Module,
     train_dl: DataLoader,
     valid_dl: DataLoader,
+    test_dl: DataLoader,
     optimizer: Optional[torch.optim.Optimizer] = None,
     scheduler: Optional[torch.optim.lr_scheduler._LRScheduler] = None,
     params_opt: Optional[Dict] = None,
@@ -537,11 +540,20 @@ def train(
     is_mixed_precision: bool = False,
     reduction: str = "weighted",
     class_weights: List[float] = None,
-    siamese: bool = False
+    class_names: List[str] = None,
+    siamese: bool = False, 
+    tta: bool = False,
 ):
+    # Connect MLFlow session to the local server
+    mlflow.set_tracking_uri("http://localhost:5000")
+    # Set Experiment name
+    mlflow.set_experiment(experiment_name)
+
     # Create a directory for the experiment
     timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
-    log_dir = os.path.join(log_dir, f"{experiment_name}_{timestamp}")
+    run_name = f"{experiment_name}_{timestamp}"
+
+    log_dir = os.path.join(log_dir, experiment_name)
     logging.info(f"Experiment logs are recorded at {log_dir}")
 
     # Ensure model directory exists
@@ -549,11 +561,8 @@ def train(
     os.makedirs(log_dir, exist_ok=True)
 
     if resume_path:
-        checkpoint = torch.load(resume_path)
-        model.load_state_dict(checkpoint["model_state"])
-        optimizer.load_state_dict(checkpoint["optimizer_state"])
-        scheduler.load_state_dict(checkpoint["scheduler_state"])
-        start_epoch = checkpoint["epoch"] + 1
+        epoch = load_checkpoint(checkpoint_path=resume_path, model=model, optimizer=optimizer, scheduler=scheduler)
+        start_epoch = epoch + 1 
     else:
         start_epoch = 0
 
@@ -562,22 +571,12 @@ def train(
     params_sc = params_sc or {}
     early_stopping_params = early_stopping_params or {"patience": nb_epochs, "trigger_times": 0}
 
-    if optimizer is None:
-        optimizer_ft = torch.optim.AdamW(params=filter(lambda p: p.requires_grad, model.parameters()), lr=1e-4)
-    else:
-        optimizer_ft = optimizer(params=filter(lambda p: p.requires_grad, model.parameters()), **params_opt) \
-            if optimizer.__class__.__name__ == "type" else optimizer
-
-    if scheduler is None:
-        lr_scheduler = torch.optim.lr_scheduler.StepLR(optimizer_ft, step_size=10, gamma=0.1)
-    else:
-        lr_scheduler = scheduler(optimizer=optimizer_ft, **params_sc) \
-            if scheduler.__class__.__name__ == "type" else scheduler
+    optimizer_ft, lr_scheduler = initialize_optimizer_scheduler(model, optimizer, scheduler, optimizer_params=params_opt, scheduler_params=params_sc)
 
     best_val_loss = 10e6
     overall_start_time = time.time()
     patience, trigger_times = early_stopping_params["patience"], early_stopping_params["trigger_times"]
-    max_images = 5
+    max_images = 1
 
     model.to(device)
 
@@ -586,12 +585,13 @@ def train(
         "epochs": nb_epochs,
         "optimizer": type(optimizer_ft).__name__,
         "scheduler": type(lr_scheduler).__name__,
-        "loss_function": loss_fn.__class__.__name__,
+        "loss_function": repr(loss_fn),
         "metrics": [metric.__name__ for metric in metrics],
         "device": device,
         "num_classes": num_classes,
         "is_mixed_precision": is_mixed_precision,
         "reduction": reduction,
+        "class_names": class_names, 
         "class_weights": class_weights,
         "siamese": siamese,
         "learning_rate": params_opt.get("lr", 1e-4),
@@ -600,23 +600,31 @@ def train(
         "early_stopping_params": early_stopping_params,
         "checkpoint_interval": checkpoint_interval,
         "training_log_interval": training_log_interval,
-        "verbose": verbose,
-        "debug": debug
+        "tta": tta
     }
 
-    # Initialize TensorBoard writer
-    with SummaryWriter(log_dir) as writer:
+    # Create model signature
+    signature, input_example = custom_infer_signature(model,
+        data_loader=test_dl,
+        siamese=siamese,
+        image_key=image_key,
+        mask_key=mask_key,
+        device=device
+    )
 
-        # log model graph 
-        log_graph(writer, model, siamese=siamese, device=device, input_shape=(1, 3, 512, 512))
-        logging.info("Model graph has been logged")
+    mlflow.enable_system_metrics_logging()
+    system_log_bool = True
+    with mlflow.start_run() as run: 
+        mlflow.set_tag('mlflow.runName', run_name)
         # Log hyperparameters
-        log_hyperparams(writer, hyperparams)
+        mlflow.log_params(hyperparams)
         logging.info("Hyperparameters have been logged")
 
+        # Training / Validation phases 
+        """
         for epoch in range(start_epoch, nb_epochs):
             start_time = time.time()
-            
+
             # Train phase
             epoch_loss, epoch_metrics = training_epoch(
                 model=model, 
@@ -626,7 +634,6 @@ def train(
                 optimizer=optimizer_ft, 
                 scheduler=lr_scheduler,
                 epoch_number=epoch, 
-                writer=writer, 
                 image_key=image_key,
                 mask_key=mask_key,
                 num_classes=num_classes,
@@ -644,7 +651,6 @@ def train(
                 valid_dl=valid_dl, 
                 loss_fn=loss_fn, 
                 epoch_number=epoch, 
-                writer=writer, 
                 metrics=metrics,
                 image_key=image_key, 
                 mask_key=mask_key, 
@@ -657,9 +663,13 @@ def train(
                 num_classes=num_classes
             )
 
+            if system_log_bool:
+                system_log_bool = False
+                mlflow.disable_system_metrics_logging()
+
             # Scheduler step after training
-            lr_epoch = lr_scheduler.get_last_lr()[0] 
-            writer.add_scalar("Learning Rate", lr_epoch, epoch)
+            lr_epoch = lr_scheduler.get_last_lr()[0]
+            mlflow.log_metric("learning_rate", lr_epoch, step=epoch)
             lr_scheduler.step()
 
             if verbose:
@@ -668,30 +678,31 @@ def train(
             # Log training and validation metrics
             steps_per_epoch = math.ceil(len(valid_dl.dataset) / valid_dl.batch_size)
             step_number = (epoch + 1) * steps_per_epoch
-            log_metrics(writer, metrics=epoch_metrics, step_number=step_number, phase="Training")
-            log_metrics(writer, metrics=epoch_vmetrics, step_number=step_number, phase="Validation")
-
+            log_metrics(metrics=epoch_metrics, step_number=step_number, phase="Training")
+            log_metrics(metrics=epoch_vmetrics, step_number=step_number, phase="Validation")
+            
             # Log sample images after validation epoch
-            log_images_to_tensorboard(
+            log_images_to_mlflow(
                 model=model,
                 data_loader=valid_dl,
-                writer=writer,
                 epoch=epoch,
                 device=device,
                 max_images=max_images,
                 image_key=image_key,
                 mask_key=mask_key,
                 siamese=siamese, 
-                color_dict= {
+                color_dict={
                     0: (0, 0, 0),  # Transparent background for class 0
                     1: (0, 255, 0),  # Green with some transparency for "no-damage"
                     2: (255, 255, 0),  # Yellow with some transparency for "minor-damage"
                     3: (255, 126, 0),  # Orange with some transparency for "major-damage"
                     4: (255, 0, 0)   # Red with some transparency for "destroyed"
-                }
+                },
+                log_dir="../runs/mlflow_logs"
             )
 
             epoch_time = time.time() - start_time
+            mlflow.log_metric("epoch_time", epoch_time, step=epoch)
             if verbose and debug:
                 logging.info(f"Epoch {epoch + 1} took {epoch_time:.2f} seconds")
                 if torch.cuda.is_available():
@@ -699,22 +710,23 @@ def train(
 
             # Save periodic checkpoints
             if epoch % checkpoint_interval == 0:
-                checkpoint_path = os.path.join(model_dir, f"checkpoint_epoch_{epoch}.pth")
-                torch.save(
-                    {
-                        "epoch": epoch,
-                        "model_state": model.state_dict()
-                    },
-                    checkpoint_path,
-                )
+                save_checkpoint(epoch=epoch,
+                                model=model,
+                                optimizer=optimizer_ft,
+                                scheduler=lr_scheduler,
+                                model_dir="./checkpoints",
+                                )
 
             # Save best model and early stopping logic
             if best_val_loss > epoch_vloss:
-                if verbose:
-                    logging.info("Saving best model")
+                logging.info(f"Saving best model with val loss : {epoch_vloss}")
                 trigger_times = 0
                 best_val_loss = epoch_vloss
-                save_model(model, ckpt_path=model_dir, name=f"{experiment_name}_{timestamp}_best_model")
+
+                # save and log best models
+                # save_model(model, ckpt_path=model_dir, name=f"{experiment_name}_{timestamp}_best_model")
+                # log_model(model, artifact_path="best_model", signature=signature,input_example=input_example)
+          
             else:
                 trigger_times += 1
                 if trigger_times >= patience:
@@ -723,8 +735,21 @@ def train(
 
         total_time = time.time() - overall_start_time
         logging.info(f"Total training time: {total_time:.2f} seconds")
-
-
+        """
+        ### Testing phase 
+        compute_model_class_performance(
+                model=model,
+                dataloader=test_dl,
+                num_classes=num_classes,
+                device=device,
+                class_names=class_names, 
+                siamese=siamese,
+                image_key=image_key,
+                mask_key=mask_key,
+                average_mode="macro",
+                tta=False,
+                mlflow_bool=True
+            )
 
 def testing(
     model: nn.Module,
@@ -749,7 +774,6 @@ def testing(
         test_dataloader (DataLoader): The DataLoader for Testing data.
         loss_fn (nn.Module): The loss function.
         epoch_number (int): The current epoch number (0-indexed).
-        writer (SummaryWriter): TensorBoard writer for logging.
         metrics (List[Callable]): A list of metrics to calculate during validation.
         image_key (str): Key to access input images in the batch.
         verbose (bool): Whether to log detailed information (default: True).
@@ -807,7 +831,6 @@ def testing(
     # Calculate average loss and metrics for the entire validation dataset
     epoch_tloss = running_loss / len(test_dataloader.dataset)
     test_metrics = {
-        name: total / len(test_dataloader.dataset) for name, total in total_metrics.items()
+        "test_" + name: total / len(test_dataloader.dataset) for name, total in total_metrics.items()
     }
-
     return epoch_tloss, test_metrics

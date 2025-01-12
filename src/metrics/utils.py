@@ -3,8 +3,10 @@ import numpy as np
 from sklearn.metrics import multilabel_confusion_matrix, precision_score, recall_score, f1_score
 from training.augmentations import augmentation_test_time, augmentation_test_time_siamese
 import albumentations as A
-from prettytable import PrettyTable
+import pandas as pd 
 from tqdm import tqdm 
+import mlflow
+import logging
 
 def compute_model_class_performance(
         model,
@@ -17,7 +19,7 @@ def compute_model_class_performance(
         mask_key="mask",
         average_mode="macro",
         tta=False,
-        output_file="class_performance_metrics.txt"
+        mlflow_bool=False
 ):
     """
     Computes and stores class-wise performance metrics for a segmentation model.
@@ -101,8 +103,8 @@ def compute_model_class_performance(
     if class_names is None:
         class_names = [f"Class {i}" for i in range(num_classes)]
 
-    table = PrettyTable()
-    table.field_names = ["Class", "Precision", "Recall", "F1 Score", "IoU", "Dice"]
+    # Collect metrics into a DataFrame
+    metrics_data = []
 
     for i in unique_classes:
         tn, fp, fn, tp = mlcm[i].ravel()
@@ -111,28 +113,38 @@ def compute_model_class_performance(
         f1 = 2 * (precision * recall) / (precision + recall) if (precision + recall) > 0 else 0.0
         dice = (2 * tp) / (2 * tp + fp + fn) if (2 * tp + fp + fn) > 0 else 0.0
         iou = tp / (tp + fp + fn) if (tp + fp + fn) > 0 else 0.0
-        table.add_row([class_names[i], f"{precision:.4f}", f"{recall:.4f}", f"{f1:.4f}", f"{iou:.4f}", f"{dice:.4f}"])
 
+        metrics_data.append({
+            "Class": class_names[i],
+            "Precision": precision,
+            "Recall": recall,
+            "F1 Score": f1,
+            "IoU": iou,
+            "Dice": dice
+        })
+    
+    metrics_df = pd.DataFrame(metrics_data)
+
+    # Compute overall metrics
     precision_overall = precision_score(all_targets, all_preds, labels=unique_classes, average=average_mode, zero_division=0)
     recall_overall = recall_score(all_targets, all_preds, labels=unique_classes, average=average_mode, zero_division=0)
     f1_overall = f1_score(all_targets, all_preds, labels=unique_classes, average=average_mode, zero_division=0)
 
-    print(f"Per-Class Performance Metrics ({'TTA' if tta else ''}):")
-    print(table)
-    print("-" * 40)
-    print("Overall Performance Metrics:")
-    print(f"  Precision ({average_mode}): {precision_overall:.4f}")
-    print(f"  Recall ({average_mode}):    {recall_overall:.4f}")
-    print(f"  F1 Score ({average_mode}):  {f1_overall:.4f}")
-    print(f"Metrics have been saved to {output_file}")
+    overall_metrics_data = {
+            "Overall Precision": [precision_overall],
+            "Overall Recall": [recall_overall],
+            "Overall F1 Score": [f1_overall]
+        }
+    overall_metrics_df = pd.DataFrame(overall_metrics_data)
     
-    with open(output_file, "w") as f:
-        f.write(f"Per-Class Performance Metrics ({'TTA' if tta else ''}):\n")
-        f.write(str(table) + "\n")
-        f.write("-" * 40 + "\n")
-        f.write("Overall Performance Metrics:\n")
-        f.write(f"  Precision ({average_mode}): {precision_overall:.4f}\n")
-        f.write(f"  Recall ({average_mode}):    {recall_overall:.4f}\n")
-        f.write(f"  F1 Score ({average_mode}):  {f1_overall:.4f}\n")
-
-    
+    if mlflow_bool:
+        mlflow.log_table(metrics_df, artifact_file="class_wise_test_performance.json")
+        mlflow.log_table(overall_metrics_df, artifact_file="overall_test_performance.json")
+        logging.info("Per-Class Performance and Overall Performance file logged as artifact")
+    else:
+        print("Class-wise Performance Metrics:")
+        print(metrics_df)
+        print("-" * 40)
+        print("Overall Performance Metrics:")
+        for metric, value in overall_metrics_data.items():
+            print(f"{metric}: {value[0]:.4f}")
