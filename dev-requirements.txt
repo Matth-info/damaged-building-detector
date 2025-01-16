@@ -25,3 +25,6 @@ xarray
 xarray-spatial
 prettytable
 fire
+mlflow
+psutil
+pynvml

@@ -15,6 +15,7 @@ from tqdm import tqdm
 import json
 import numpy as np
 
+
 class Puerto_Rico_Building_Dataset(Dataset):
     def __init__(
         self,
@@ -206,10 +207,9 @@ class Puerto_Rico_Building_Dataset(Dataset):
 
         # Apply transformations if specified (Albumentations supports multiple inputs in the same pipeline)
         if self.transform:
-            transformed = self.transform(image=pre_image / 255.0, mask=mask_image)
-            transformed_bis = self.transform(image=post_image / 255.0)
-            pre_image = transformed["image"].to(torch.float32) 
-            post_image = transformed_bis["image"].to(torch.float32)
+            transformed = self.transform(pre_image=pre_image / 255.0, post_image=post_image / 255.0, mask=mask_image)
+            pre_image = transformed["pre_image"].to(torch.float32) 
+            post_image = transformed["post_image"].to(torch.float32)
             mask_image = transformed["mask"].to(torch.long)
         else:
             # Convert images and mask to tensors with normalization for compatibility with PyTorch
@@ -783,12 +783,12 @@ class xDB_Damaged_Building(Dataset):
 
 
 
-###### Siamese Datasets ######
+###### Change Detection Datasets ######
 class xDB_Siamese_Dataset(Dataset):
     def __init__(self, 
                  origin_dir: str,
                  mode="damage",
-                 transform: Optional[A.Compose] = None,
+                 transform : Optional[A.Compose] = None,
                  type: str = "train",
                  val_ratio = 0.1, 
                  test_ratio = 0.1, 
@@ -798,7 +798,7 @@ class xDB_Siamese_Dataset(Dataset):
         self.type = type
         np.random.seed(seed=seed)
         self.label_dir = Path(origin_dir) / "labels"
-        assert mode in ["building", "damage"], "Mode must be 'building' or 'damage'."
+        assert mode in ["building", "full_damage", "simple_damage", "change_detection"], "Mode must be 'building', 'full_damage', 'simple_damage' or 'change_detection'"
         self.mode = mode
         self.list_labels = [str(x) for x in self.label_dir.rglob(pattern=f'*post_*.json')]
         self.transform = transform
@@ -847,18 +847,20 @@ class xDB_Siamese_Dataset(Dataset):
             pre_image = np.float32(np.array(pre_image)) / 255.0
             post_image = np.float32(np.array(post_image)) / 255.0
 
-            transformed_pre = self.transform(image=pre_image, mask=pre_mask)
-            transformed_post = self.transform(image=post_image, mask=post_mask)
+            transformed = self.transform(
+                    image = pre_image,
+                    mask = pre_mask,
+                    post_image = post_image,
+                    post_mask = post_mask
+            )
+            pre_image = transformed["image"].float()
+            pre_mask = transformed["mask"].long()
+            post_image = transformed["post_image"].float()
+            post_mask = transformed["post_mask"].long()
 
-            pre_image = transformed_pre["image"].float()
-            pre_mask = transformed_pre["mask"].long()
-
-            post_image = transformed_post["image"].float()
-            post_mask = transformed_post["mask"].long()
         else:
             pre_image = torch.from_numpy(np.array(pre_image)).permute(2, 0, 1).float() / 255.0
             pre_mask = torch.from_numpy(pre_mask).long()
-
             post_image = torch.from_numpy(np.array(post_image)).permute(2, 0, 1).float() / 255.0
             post_mask = torch.from_numpy(post_mask).long()
 
@@ -903,26 +905,50 @@ class xDB_Siamese_Dataset(Dataset):
         mask = Image.new('L', (image_height, image_width), 0)
         draw = ImageDraw.Draw(mask)
 
-        damage_classes = {
-            "no-damage": 1,
-            "minor-damage": 2,
-            "major-damage": 3,
-            "destroyed": 4
-        }
-
+        damage_classes = self.get_classes(mode)
+            
         for damage, polygon in polygons:
             if polygon.is_valid:
                 x, y = polygon.exterior.coords.xy
                 coords = list(zip(x, y))
-                if mode == "building":
-                    draw.polygon(coords, fill=1)
-                elif mode == "damage":
+                if mode is not None:
                     damage_value = damage_classes.get(damage, 0)
                     draw.polygon(coords, fill=damage_value)
 
         return np.array(mask)
-
-        
+    
+    def get_classes(self, mode):
+        if mode == "full_damage":
+            return {
+                "no-damage": 1,
+                "minor-damage": 2,
+                "major-damage": 3,
+                "destroyed": 4
+            }
+        elif mode == "simple_damage":
+            return {
+                "no-damage": 1,
+                "minor-damage": 1,
+                "major-damage": 2,
+                "destroyed": 2
+            }
+        elif mode == "change_detection":
+            return {
+                "no-damage": 0,
+                "minor-damage": 0,
+                "major-damage": 1,
+                "destroyed": 1
+            }
+        elif mode == "building":
+            return {
+                "no-damage": 1,
+                "minor-damage": 1,
+                "major-damage": 1,
+                "destroyed": 1
+            }
+        else:
+            return None 
+            
     def display_data(self, list_ids: List[int], annotated=True, cols=2):
         """
         Display a list of images with or without annotations.
@@ -950,33 +976,17 @@ class xDB_Siamese_Dataset(Dataset):
         fig, axes = plt.subplots(rows, cols, figsize=(5 * cols, 5 * rows))
         axes = axes.flatten() if rows > 1 or cols > 1 else [axes]  # Handle single image case
         # Damage classes and their corresponding colors
-        if self.mode == "damage":
-            damage_classes = {
-                "no-damage": 1,
-                "minor-damage": 2,
-                "major-damage": 3,
-                "destroyed": 4
-            }
-            damage_colors = {
-                    0: (0, 0, 0, 0),  # Transparent background for class 0
-                    1: (0, 1, 0, 1),  # Green with some transparency for "no-damage"
-                    2: (1, 1, 0, 1),  # Yellow with some transparency for "minor-damage"
-                    3: (1, 0.5, 0, 1),  # Orange with some transparency for "major-damage"
-                    4: (1, 0, 0, 1)   # Red with some transparency for "destroyed"
-                }
-            legend_elements = [
-                    Patch(facecolor=damage_colors[val], edgecolor=None, label=key)
-                    for key, val in damage_classes.items()
-                    ]
-            cmap=plt.cm.colors.ListedColormap([damage_colors[val] for val in sorted(damage_colors.keys())])
         
-        elif self.mode == "building":
-            # Legend components
-            legend_elements = [
-                Patch(facecolor='red', edgecolor=None, label='building')
-                ]
-            cmap = "Reds"
-            
+        damage_colors = {
+                0: (0, 0, 0),  # Transparent background for class 0
+                1: (0, 1, 0),  # Green with some transparency for "no-damage"
+                2: (1, 1, 0),  # Yellow with some transparency for "minor-damage"
+                3: (1, 0.5, 0),  # Orange with some transparency for "major-damage"
+                4: (1, 0, 0)   # Red with some transparency for "destroyed"
+            }
+        
+        cmap = plt.cm.colors.ListedColormap([damage_colors[val] for val in sorted(damage_colors.keys())])
+        
         for i, idx in enumerate(list_ids):
             if idx < 0 or idx >= len(self):  # Validate index
                 print(f"Index {idx} is out of bounds. Skipping...")
@@ -990,15 +1000,14 @@ class xDB_Siamese_Dataset(Dataset):
             # Display pre-disaster image
             axes[2 * i].imshow(pre_image)
             if annotated:
-                color_map_pre_image = plt.cm.colors.ListedColormap([(0, 0, 0, 0),(0, 1, 0, 1)])
-                axes[2 * i].imshow(pre_mask, alpha=0.3, cmap = cmap if self.mode == "building" else color_map_pre_image) 
+                axes[2 * i].imshow(pre_mask, alpha=0.5, cmap=cmap) 
             axes[2 * i].set_title(f"Image {idx}: Pre-disaster")
             axes[2 * i].axis("off")
 
             # Display post-disaster image
             axes[2 * i + 1].imshow(post_image)
             if annotated:
-                axes[2 * i + 1].imshow(post_mask, alpha=0.3, cmap=cmap)
+                axes[2 * i + 1].imshow(post_mask, alpha=0.5, cmap=cmap)
             axes[2 * i + 1].set_title(f"Image {idx}: Post-disaster")
             axes[2 * i + 1].axis("off")
 
@@ -1006,9 +1015,146 @@ class xDB_Siamese_Dataset(Dataset):
         for j in range(2 * num_images, len(axes)):
             axes[j].axis("off")
 
-        # Add legend
-        plt.figlegend(handles=legend_elements, loc='lower right', ncol=1, frameon=False, fontsize=10)
         
         # Adjust layout and show the plot
         plt.tight_layout()
         plt.show()
+
+class Levir_cd_dataset(Dataset):
+    """
+    LEVIR-CD Dataset for change detection.
+    Inspired by the original Levir-cd dataset definition : https://github.com/justchenhao/STANet/blob/master/data/changedetection_dataset.py
+    The dataset structure is assumed to be:
+    
+    dataroot:
+        ├── A (contains images before change)
+        ├── B (contains images after change)
+        ├── label (contains change detection labels)
+
+    Args:
+        origin_dir (str): Root directory for dataset (where A, B, and label are located).
+        type (str): Dataset type - "train", "val", or "test".
+        transform (callable, optional): Optional transform to be applied to the images and labels.
+    
+    Dataset Mean: [0.3871232  0.38200352 0.32545044]
+    Dataset Std Dev: [0.15867973 0.14972445 0.13859262]
+    """
+    def __init__(self, origin_dir=None, type="train", transform=None):
+        # Folder names
+        folder_A = 'A'
+        folder_B = 'B'
+        folder_L = 'label'
+
+        self.type = type
+        self.transform = transform
+        root_dir = Path(origin_dir) / self.type
+
+        from datasets.utils import is_image_file
+        # Set the path to each folder
+        self.A_paths = sorted([x for x in (root_dir / folder_A).glob("*.*") if is_image_file(x)])
+        self.B_paths = sorted([x for x in (root_dir / folder_B).glob("*.*") if is_image_file(x)])
+        self.L_paths = sorted([x for x in (root_dir / folder_L).glob("*.*") if is_image_file(x)])
+
+        print(f"Loaded {len(self)} {self.type} samples.")
+    def __len__(self):
+        """Returns the number of image pairs"""
+        return len(self.A_paths)
+
+    def __getitem__(self, index):
+        """Retrieve one sample of A, B, and label (if available)"""
+        
+        # Load image pairs (A, B)
+        A_img = Image.open(self.A_paths[index]).convert('RGB')  # Image before change
+        B_img = Image.open(self.B_paths[index]).convert('RGB')  # Image after change
+        label_img = Image.open(self.L_paths[index]).convert('L')  # Label mask (grayscale)
+
+        # Convert images to numpy arrays (Albumentations expects this)
+        pre_image = (np.array(A_img) / 255.0).astype(np.float32)
+        post_image = (np.array(B_img) / 255.0).astype(np.float32)
+        mask = np.array(label_img).astype(np.uint8)  # Convert to binary mask (0 or 1)
+        mask = np.where(mask == 255, 1, 0)
+
+        # Apply transformations if available
+        if self.transform:
+            transformed = self.transform(image=pre_image, mask=mask, post_image=post_image)
+            pre_image = transformed['image']
+            post_image = transformed['post_image']
+            mask = transformed['mask']
+        else:
+            pre_image = torch.from_numpy(pre_image).permute(2, 0, 1).float() 
+            post_image = torch.from_numpy(post_image).permute(2, 0, 1).float()
+            mask = torch.from_numpy(mask).long()
+
+        return {
+            "pre_image": pre_image,
+            "post_image": post_image,
+            "mask": mask
+        }
+    
+    def display_data(self, list_indices: List[int]) -> None :
+        """
+        Display the pre-change, post-change, and mask images for a list of indices.
+        
+        Args:
+            list_indices: List[int]: List of indices to display data for.
+        """
+        # Set up the plot
+        num_images = len(list_indices)
+        fig, axes = plt.subplots(num_images, 3, figsize=(12, 4 * num_images))
+        
+        # Ensure axes is 2D for easy indexing (in case there's only one image)
+        if num_images == 1:
+            axes = np.expand_dims(axes, axis=0)
+        
+        # Loop over each index in the provided list
+        for i, index in enumerate(list_indices):
+            data = self[index]
+            
+            pre_image = data["pre_image"].numpy().transpose(1, 2, 0)  # Convert back to HWC
+            post_image = data["post_image"].numpy().transpose(1, 2, 0)  # Convert back to HWC
+            mask = data["mask"].numpy() if "mask" in data else None
+
+            # Pre-change image
+            axes[i, 0].imshow(pre_image)
+            axes[i, 0].set_title("Pre-Change Image")
+            axes[i, 0].axis('off')
+
+            # Post-change image
+            axes[i, 1].imshow(post_image)
+            axes[i, 1].set_title("Post-Change Image")
+            axes[i, 1].axis('off')
+
+            #  mask (change detection mask)
+            if mask is not None:
+                axes[i, 2].imshow(mask, cmap='gray')
+                axes[i, 2].set_title("Mask (Change Detection)")
+            else:
+                axes[i, 2].axis('off')
+
+        plt.tight_layout()
+        plt.show()
+    
+    def compute_statistics(self):
+        """
+        Compute and display statistics about the dataset.
+        """
+        total_images = len(self)
+        mean_sum = np.zeros(3)
+        std_sum = np.zeros(3)
+        
+        for i in range(total_images):
+            data = self[i]
+            pre_image = data["pre_image"].numpy().transpose(1, 2, 0)  # Convert to HWC
+            post_image = data["post_image"].numpy().transpose(1, 2, 0)  # Convert to HWC
+            
+            mean_sum += pre_image.mean(axis=(0, 1))
+            mean_sum += post_image.mean(axis=(0, 1))
+            
+            std_sum += pre_image.std(axis=(0, 1))
+            std_sum += post_image.std(axis=(0, 1))
+        
+        mean = mean_sum / (2 * total_images)
+        std = std_sum / (2 * total_images)
+        
+        print(f"Dataset Mean: {mean}")
+        print(f"Dataset Std Dev: {std}")

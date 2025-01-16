@@ -1,5 +1,6 @@
 import albumentations as A
 from albumentations.pytorch import ToTensorV2
+from albumentations.core.composition import OneOf
 import torch.nn as nn
 import torch
 import numpy as np
@@ -154,48 +155,62 @@ def augmentation_test_time_siamese(
 
         return torch.from_numpy(aggregated).to(device)
 
+
 #### Building Segmentation Model Augmentation Pipeline #####
-def get_train_augmentation_pipeline(image_size=(512, 512), max_pixel_value=1, mean=(0.349, 0.354, 0.268), std=(0.114, 0.102, 0.094)):
+def get_train_augmentation_pipeline(image_size=(256,256), max_pixel_value=1, mean=None, std=None):
     transform = A.Compose([
-        # Resize images and masks
-        A.Resize(image_size[0], image_size[1], p=1.0),  # Ensure both image and mask are resized
-        # Normalize images
-        A.Normalize(mean=mean, std=std, max_pixel_value=max_pixel_value, p=1.0),
-        # Random horizontal flip
-        A.HorizontalFlip(p=0.5),
-        # Random vertical flip
-        A.VerticalFlip(p=0.5),
-        # Random rotation
-        A.RandomRotate90(p=0.5),
-        # Switch x and y axis 
-        A.Transpose(p=0.5), 
-        # Random scale and aspect ratio change
-        A.RandomSizedCrop(min_max_height=(image_size[0], image_size[1]), height=image_size[0], width=image_size[1], p=0.2),
-        # Random brightness and contrast adjustments
-        A.RandomBrightnessContrast(p=0.2),
-        # Random saturation adjustment
-        A.HueSaturationValue(hue_shift_limit=20, sat_shift_limit=30, val_shift_limit=20, p=0.2),
-        # Convert to tensor (works for both image and mask)
-        ToTensorV2()
-    ])
+            # Resize images and masks
+            A.RandomResizedCrop(height=image_size[0], width=image_size[1], scale=(0.8, 1), p=1.0) if image_size is not None else A.NoOp(),  # Ensure both image and mask are resized
+            # Normalize images
+            A.Normalize(mean=mean, std=std, max_pixel_value=max_pixel_value, p=1.0) if mean and std else A.NoOp(),
+            # Scale (+-10%) and rotation (+-10 degrees)
+            A.ShiftScaleRotate(shift_limit=0, scale_limit=0.1, rotate_limit=10, p=0.5), 
+            # Mask dropout
+            # A.CoarseDropout(max_holes=4, max_height=64, max_width=64, p=0.5),  
+            OneOf([
+                A.HorizontalFlip(p=0.5),
+                # Random vertical flip
+                A.VerticalFlip(p=0.5),
+                # Random rotation
+                A.RandomRotate90(p=0.5),
+                # Switch x and y axis 
+                A.Transpose(p=0.5), 
+            ], p = 1), 
+            OneOf([
+                A.RandomBrightnessContrast(p=0.5) # Random brightness and contrast change
+            ], p=1),
+            OneOf([
+                A.HueSaturationValue(p=0.5),       # HSV adjustment
+                A.RGBShift(p=0.5),                 # RGB adjustment
+            ], p=1),
+            ToTensorV2()
+        ], additional_targets = {
+                'post_image' : 'image',
+                'post_mask': 'mask'
+        })
     return transform
 
-def get_val_augmentation_pipeline(image_size=(512, 512), max_pixel_value=1, mean=(0.349, 0.354, 0.268), std=(0.114, 0.102, 0.094)):
+def get_val_augmentation_pipeline(image_size=None, max_pixel_value=1, mean=None, std=None):
     transform = A.Compose([
-        # Resize images and masks
-        A.Resize(image_size[0], image_size[1], p=1.0),  # Ensure both image and mask are resized
-        A.Normalize(mean=mean, std=std, max_pixel_value=max_pixel_value, p=1.0),
+        A.Resize(image_size[0], image_size[1]) if image_size is not None else A.NoOp(),
+        A.Normalize(mean=mean, std=std, max_pixel_value=max_pixel_value, p=1.0) if mean and std else A.NoOp(),
         ToTensorV2()
-    ])
+    ], additional_targets={
+                'post_image' : 'image',
+                'post_mask': 'mask'
+        }
+    )
     return transform
 
-# xDB Tier3 Mean: [0.34944121 0.35439991 0.26813794], Std: [0.11447578 0.10222107 0.09438808]
+# xDB Tier3 Mean: [0.349 0.354 0.268], Std: [0.114 0.102 0.094]
+# ImageNet Mean: [0.485, 0.456, 0.406], Std = [0.229, 0.224, 0.225]
+# Levir-CD Mean: [0.387 , 0.382, 0.325], Std = [0.158 ,0.150, 0.138]
 
 ###### AutoEncoder Augmentation Pipeline #######
-def get_train_autoencoder_augmentation_pipeline(image_size=(512, 512)):
+def get_train_autoencoder_augmentation_pipeline(image_size=None):
     return A.Compose(
         [
-            A.Resize(image_size[0], image_size[1]),
+            A.Resize(image_size[0], image_size[1]) if image_size is not None else A.NoOp(),
             A.HorizontalFlip(p=0.5),  # Random horizontal flip with 50% probability
             A.VerticalFlip(p=0.5),    # Random vertical flip with 50% probability
             A.RandomRotate90(p=0.5),  # Random 90 degree rotation with 50% probability
@@ -216,3 +231,4 @@ def get_val_autoencoder_augmentation_pipeline(image_size=(512, 512)):
             ToTensorV2(),
             ], is_check_shapes=True
         )
+

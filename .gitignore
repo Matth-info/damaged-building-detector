@@ -7,4 +7,9 @@ data/xDB
 data/Cloud_DrivenData
 data/Open-cities
 data/Puerto_Rico_Dataset
+data/Levir-cd 
+data/Levir-cd-v2
 
+# Ignore logs 
+./runs
+notebooks/notebook_test.ipynb
