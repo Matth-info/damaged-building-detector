@@ -1,17 +1,19 @@
 # Dataset folder keep track of the custom pytorch dataset that have been used to load, preprocess data according to the source dataset and the model specificity
 import torch
 import albumentations as A
-from albumentations.pytorch import ToTensorV2
 import numpy as np
 import pandas as pd
 from PIL import Image
-from torch.utils.data import Dataset
 from pathlib import Path
 from typing import List, Optional
 import matplotlib.pyplot as plt
 
+
+from .base import Cloud_Dataset
+
+
 __all__ = ["prepare_cloud_segmentation_data"]
-class Cloud_DrivenData_Dataset(torch.utils.data.Dataset):
+class Cloud_DrivenData_Dataset(Cloud_Dataset):
     def __init__(
         self,
         x_paths: pd.DataFrame,
