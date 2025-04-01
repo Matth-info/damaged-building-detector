@@ -1,22 +1,13 @@
-import albumentations as A
-from albumentations.pytorch import ToTensorV2
-from albumentations.core.composition import OneOf
-import torch.nn as nn
-import torch
-import numpy as np
 from typing import List, Callable
 
-### Augmentation Test Time
+import numpy as np
+import torch
+import torch.nn as nn
+from albumentations.pytorch import ToTensorV2
+import albumentations as A
 
-__all__ = ["augmentation_test_time",
-           "augmentation_test_time_siamese", 
-            'get_train_augmentation_pipeline',
-            'get_val_augmentation_pipeline', 
-            'get_train_autoencoder_augmentation_pipeline'
-            'get_val_autoencoder_augmentation_pipeline'
-            ]
 
-def reverse_augmentation(predictions, augmentation):
+def reverse_augmentation(predictions : np.array, augmentation : A.VerticalFlip | A.HorizontalFlip):
     """
     Reverse specific augmentations applied to images to make predictions compatible.
     
@@ -35,6 +26,8 @@ def reverse_augmentation(predictions, augmentation):
         return np.flip(predictions, axis=-2)  # Flip along height
     # Add cases for other augmentations if needed, such as rotation.
     return predictions  # Default to no reversal.
+
+
 
 def augmentation_test_time(model: nn.Module,
                             images: torch.Tensor, 
@@ -88,6 +81,8 @@ def augmentation_test_time(model: nn.Module,
 
         return torch.from_numpy(aggregated).to(device)
     
+
+
 def augmentation_test_time_siamese(
     model: nn.Module,
     images_1: torch.Tensor,
@@ -154,81 +149,3 @@ def augmentation_test_time_siamese(
             raise ValueError(f"Unsupported aggregation method: {aggregation}")
 
         return torch.from_numpy(aggregated).to(device)
-
-
-#### Building Segmentation Model Augmentation Pipeline #####
-def get_train_augmentation_pipeline(image_size=(256,256), max_pixel_value=1, mean=None, std=None):
-    transform = A.Compose([
-            # Resize images and masks
-            A.RandomResizedCrop(height=image_size[0], width=image_size[1], scale=(0.8, 1), p=1.0) if image_size is not None else A.NoOp(),  # Ensure both image and mask are resized
-            # Normalize images
-            A.Normalize(mean=mean, std=std, max_pixel_value=max_pixel_value, p=1.0) if mean and std else A.NoOp(),
-            # Scale (+-10%) and rotation (+-10 degrees)
-            A.ShiftScaleRotate(shift_limit=0, scale_limit=0.1, rotate_limit=10, p=0.5), 
-            # Mask dropout
-            # A.CoarseDropout(max_holes=4, max_height=64, max_width=64, p=0.5),  
-            OneOf([
-                A.HorizontalFlip(p=0.5),
-                # Random vertical flip
-                A.VerticalFlip(p=0.5),
-                # Random rotation
-                A.RandomRotate90(p=0.5),
-                # Switch x and y axis 
-                A.Transpose(p=0.5), 
-            ], p = 1), 
-            OneOf([
-                A.RandomBrightnessContrast(p=0.5) # Random brightness and contrast change
-            ], p=1),
-            OneOf([
-                A.HueSaturationValue(p=0.5),       # HSV adjustment
-                A.RGBShift(p=0.5),                 # RGB adjustment
-            ], p=1),
-            ToTensorV2()
-        ], additional_targets = {
-                'post_image' : 'image',
-                'post_mask': 'mask'
-        })
-    return transform
-
-def get_val_augmentation_pipeline(image_size=None, max_pixel_value=1, mean=None, std=None):
-    transform = A.Compose([
-        A.Resize(image_size[0], image_size[1]) if image_size is not None else A.NoOp(),
-        A.Normalize(mean=mean, std=std, max_pixel_value=max_pixel_value, p=1.0) if mean and std else A.NoOp(),
-        ToTensorV2()
-    ], additional_targets={
-                'post_image' : 'image',
-                'post_mask': 'mask'
-        }
-    )
-    return transform
-
-# xDB Tier3 Mean: [0.349 0.354 0.268], Std: [0.114 0.102 0.094]
-# ImageNet Mean: [0.485, 0.456, 0.406], Std = [0.229, 0.224, 0.225]
-# Levir-CD Mean: [0.387 , 0.382, 0.325], Std = [0.158 ,0.150, 0.138]
-
-###### AutoEncoder Augmentation Pipeline #######
-def get_train_autoencoder_augmentation_pipeline(image_size=None):
-    return A.Compose(
-        [
-            A.Resize(image_size[0], image_size[1]) if image_size is not None else A.NoOp(),
-            A.HorizontalFlip(p=0.5),  # Random horizontal flip with 50% probability
-            A.VerticalFlip(p=0.5),    # Random vertical flip with 50% probability
-            A.RandomRotate90(p=0.5),  # Random 90 degree rotation with 50% probability
-            A.ShiftScaleRotate(
-                shift_limit=0.1, scale_limit=0.1, rotate_limit=15, p=0.5, border_mode=0
-            ),  # Random shift, scale, and rotation with fill at borders
-            A.ColorJitter(brightness=0.2, contrast=0.2, saturation=0.2, hue=0.1, p=0.5),  # Adjust color properties
-            A.RandomBrightnessContrast(brightness_limit=0.3, contrast_limit=0.3, p=0.5),  # Adjust brightness and contrast
-            A.GaussianBlur(blur_limit=(3, 5), p=0.3),  # Apply a Gaussian blur
-            A.GaussNoise(var_limit=(10, 50), p=0.3),  # Add Gaussian noise
-            ToTensorV2(),  # Convert to PyTorch tensors
-        ], is_check_shapes=True
-        )
-def get_val_autoencoder_augmentation_pipeline(image_size=(512, 512)):
-    return  A.Compose(
-            [
-            A.Resize(image_size[0], image_size[1]),
-            ToTensorV2(),
-            ], is_check_shapes=True
-        )
-

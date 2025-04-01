@@ -1,12 +1,12 @@
+import logging
+
 import torch
 import numpy as np
-from sklearn.metrics import multilabel_confusion_matrix, precision_score, recall_score, f1_score
-from training.augmentations import augmentation_test_time, augmentation_test_time_siamese
 import albumentations as A
 import pandas as pd 
 from tqdm import tqdm 
 import mlflow
-import logging
+from sklearn.metrics import precision_score, recall_score, f1_score, multilabel_confusion_matrix
 
 def compute_model_class_performance(
         model,
@@ -18,7 +18,6 @@ def compute_model_class_performance(
         image_key="image",
         mask_key="mask",
         average_mode="macro",
-        tta=False,
         mlflow_bool=False
 ):
     """
@@ -34,7 +33,6 @@ def compute_model_class_performance(
         image_key (str): Key for accessing images in the dataloader batch.
         mask_key (str): Key for accessing masks in the dataloader batch.
         average_mode (str): Averaging mode for overall metrics ('macro', 'micro', etc.).
-        tta (bool): Run Test Time Augmentation 
         output_file (str): Path to the file where metrics will be stored.
 
     Returns:
@@ -53,37 +51,11 @@ def compute_model_class_performance(
                     pre_image = batch["pre_image"].to(device)
                     post_image = batch["post_image"].to(device)
                     targets = batch[mask_key].to(device)
-
-                    if tta:
-                        outputs = augmentation_test_time_siamese(
-                            model=model, 
-                            images_1=pre_image, 
-                            images_2=post_image, 
-                            list_augmentations=[
-                                                A.HorizontalFlip(p=1.0),  # Horizontal flip
-                                                A.VerticalFlip(p=1.0)    # Vertical flip
-                                            ],
-                            aggregation="mean", 
-                            device=device
-                            )
-                    else:
-                        outputs = model(pre_image, post_image)
+                    outputs = model(pre_image, post_image)
                 else:
                     images = batch[image_key].to(device)
                     targets = batch[mask_key].to(device)
-                    if tta:
-                        outputs = augmentation_test_time(
-                            model=model, 
-                            images=images, 
-                            list_augmentations=[
-                                                A.HorizontalFlip(p=1.0),  # Horizontal flip
-                                                A.VerticalFlip(p=1.0)    # Vertical flip
-                                            ],
-                            aggregation="mean", 
-                            device=device
-                        )
-                    else: 
-                        outputs = model(images)
+                    outputs = model(images)
 
                 preds = torch.argmax(outputs, dim=1).cpu().numpy()
                 targets = targets.cpu().numpy()

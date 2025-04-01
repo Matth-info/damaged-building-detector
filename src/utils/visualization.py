@@ -8,8 +8,32 @@ import numpy as np
 import matplotlib.pyplot as plt
 import torch
 
-def unormalize_images(image, std=np.array([0.229, 0.224, 0.225]), mean=np.array([0.485, 0.456, 0.406])):
-    return (image * std + mean).clip(0, 1)
+def renormalize_image(image : torch.Tensor | np.ndarray , mean : list[float] | tuple[float] , std : list[float] | tuple[float], device: str):
+    """
+    Renormalizes an image tensor or NumPy array by reversing the normalization process.
+
+    Args:
+        image (torch.Tensor or np.ndarray): Normalized image (C, H, W) with values in range ~N(0,1).
+        mean (list or tuple): Mean values used for normalization (per channel).
+        std (list or tuple): Standard deviation values used for normalization (per channel).
+        device (str): 'cpu' or 'cuda' 
+    Returns:
+        torch.Tensor or np.ndarray: Renormalized image with pixel values in range [0, 1].
+    """
+    if isinstance(image, torch.Tensor):
+        mean = torch.tensor(mean).view(-1, 1, 1).to(device)  # Shape (C, 1, 1)
+        std = torch.tensor(std).view(-1, 1, 1).to(device)    # Shape (C, 1, 1)
+        renormalized_image = image * std + mean
+        return torch.clamp(renormalized_image, 0, 1)  # Keep values in [0, 1]
+
+    elif isinstance(image, np.ndarray):
+        mean = np.array(mean).reshape(-1, 1, 1)  # Shape (C, 1, 1)
+        std = np.array(std).reshape(-1, 1, 1)    # Shape (C, 1, 1)
+        renormalized_image = image * std + mean
+        return np.clip(renormalized_image, 0, 1)  # Keep values in [0, 1]
+    
+    else:
+        raise TypeError("Input should be a torch.Tensor or a np.ndarray")
 
 def display_semantic_predictions_batch(images, 
                                        mask_predictions,
@@ -57,7 +81,7 @@ def display_semantic_predictions_batch(images,
         # Handle channel-first images (C, H, W) and unnormalize
         if image.ndim == 3 and image.shape[0] == 3:  # RGB images
             image = np.transpose(image, (1, 2, 0))  # Convert to (H, W, C)
-            image = unormalize_images(image, std, mean) if bool_normalized else image  # Unnormalize and clip to [0, 1]
+            image = renormalize_image(image, std, mean) if bool_normalized else image  # Unnormalize and clip to [0, 1]
         elif image.ndim == 3 and image.shape[0] == 1:  # Grayscale
             image = image[0]  # Remove channel dimension
 
@@ -198,7 +222,7 @@ def display_semantic_siamese_predictions_batch(
         def process_image(image):
             if image.ndim == 3 and image.shape[0] == 3:  # RGB
                 image = np.transpose(image, (1, 2, 0))  # Convert to (H, W, C)
-                return unormalize_images(image, mean, std) if bool_normalized else image
+                return renormalize_image(image, mean, std) if bool_normalized else image
             elif image.ndim == 3 and image.shape[0] == 1:  # Grayscale
                 return image[0]  # Remove channel dimension
             return image

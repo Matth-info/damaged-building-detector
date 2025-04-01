@@ -1,3 +1,4 @@
+from typing import List, Callable, Dict, Optional, Tuple
 # PyTorch imports
 import torch
 import torch.nn as nn
@@ -10,7 +11,15 @@ from torch.nn.modules.loss import _Loss
 # utils import
 from datetime import datetime
 import os
-from typing import List, Callable, Dict, Optional, Tuple
+import albumentations as A
+
+import time
+import numpy as np
+import math
+import logging 
+from tqdm import tqdm 
+
+
 from .utils import (
     log_metrics,
     log_loss,
@@ -25,19 +34,12 @@ from .utils import (
     initialize_optimizer_scheduler
 )
 
-from metrics import compute_model_class_performance
+from src.metrics import compute_model_class_performance
 
-from .augmentations import augmentation_test_time, augmentation_test_time_siamese
-import albumentations as A
-
-import time
-import numpy as np
-import math
-import logging 
-from tqdm import tqdm 
+from ..augmentation.augmentations import augmentation_test_time, augmentation_test_time_siamese
 
 # from custom metrics and losses
-from metrics import get_stats
+from src.metrics import get_stats
 
 # mlflow 
 import mlflow
@@ -48,7 +50,7 @@ logging.basicConfig(level=logging.INFO)
 
 def training_step(
     model: nn.Module,
-    batch: dict,
+    batch: dict[str | torch.Tensor],
     loss_fn: _Loss,
     optimizer: optim.Optimizer,
     metrics: List[Callable],
@@ -621,7 +623,6 @@ def train(
         logging.info("Hyperparameters have been logged")
 
         # Training / Validation phases 
-        """
         for epoch in range(start_epoch, nb_epochs):
             start_time = time.time()
 
@@ -735,7 +736,7 @@ def train(
 
         total_time = time.time() - overall_start_time
         logging.info(f"Total training time: {total_time:.2f} seconds")
-        """
+      
         ### Testing phase 
         compute_model_class_performance(
                 model=model,
@@ -747,7 +748,6 @@ def train(
                 image_key=image_key,
                 mask_key=mask_key,
                 average_mode="macro",
-                tta=False,
                 mlflow_bool=True
             )
 
