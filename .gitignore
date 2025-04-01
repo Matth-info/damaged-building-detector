@@ -75,3 +75,6 @@ docs/_build/
 # PyBuilder
 target/
 maildir
+
+# Pytest cache directory
+.pytest_cache/

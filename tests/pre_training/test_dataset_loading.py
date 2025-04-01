@@ -10,16 +10,18 @@ from src.datasets import (
     Levir_cd_dataset
 )
 
+data_folder_path = ".../data/data_samples"
+
 @pytest.mark.parametrize("dataset_cls, kwargs, expected_shapes", [
     (OpenCities_Building_Dataset, {
-        "images_dir": "../data/data_samples/Open-cities/training_data/images",
-        "masks_dir": "../data/data_samples/Open-cities/training_data/masks",
+        "images_dir": f"{data_folder_path}/Open-cities/training_data/images",
+        "masks_dir": f"{data_folder_path}/Open-cities/training_data/masks",
         "transform": None,
         "filter_invalid_image": False
     }, [(3, 1024, 1024), (1024, 1024)]),
 
     (xDB_Damaged_Building, {
-        "origin_dir":"../data/data_samples/xDB/tier3",
+        "origin_dir": f"{data_folder_path}/xDB/tier3",
         "mode":"building",
         "time":"pre",
         "transform":None,
@@ -48,7 +50,7 @@ def test_load_standard_datasets(dataset_cls, kwargs, expected_shapes):
 # siamese dataset
 @pytest.mark.parametrize("dataset_cls, kwargs, expected_shapes", [
      (Puerto_Rico_Building_Dataset, {
-        "base_dir": "../data/data_samples/Puerto_Rico_dataset",
+        "base_dir": f"{data_folder_path}/Puerto_Rico_dataset",
         "pre_disaster_dir": "Pre_Event_Grids_In_TIFF",
         "post_disaster_dir": "Post_Event_Grids_In_TIFF",
         "mask_dir": "Pre_Event_Grids_In_TIFF_mask",
@@ -56,12 +58,12 @@ def test_load_standard_datasets(dataset_cls, kwargs, expected_shapes):
         "extension": "tif"
     }, [(3, 512, 512),(512, 512)]),
     (Levir_cd_dataset, {
-        "origin_dir": "../data/data_samples/Levir-cd",
+        "origin_dir": f"{data_folder_path}/Levir-cd",
         "transform": None,
         "type": "test"
     }, [(3, 1024, 1024), (1024, 1024)]),
     (xDB_Siamese_Dataset, {
-        "origin_dir":"../data/data_samples/xDB/tier3",
+        "origin_dir": f"{data_folder_path}/xDB/tier3",
         "mode":"building",
         "transform":None,
         "type":"train",
