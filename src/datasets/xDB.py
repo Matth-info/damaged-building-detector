@@ -35,6 +35,10 @@ damage_dict = {
 
 #### Segmentation Dataset #### 
 class xDB_Damaged_Building(Segmentation_Dataset):
+
+    MEAN = [0.349, 0.354, 0.268]
+    STD = [0.114, 0.102, 0.094]
+    
     def __init__(self, 
                  origin_dir: str,
                  mode = "building",
@@ -341,6 +345,8 @@ class xDB_Siamese_Dataset(Change_Detection_Dataset):
                  test_ratio = 0.1, 
                  seed: int = 42
                  ):
+        MEAN = [0.349, 0.354, 0.268]
+        STD = [0.114, 0.102, 0.094]
         assert type in ["train", "val", "test"], "Dataset must be 'train', 'val' or 'test'"
         self.type = type
         np.random.seed(seed=seed)
@@ -594,6 +600,8 @@ class xDB_Instance_Building(Instance_Segmentation_Dataset):
         - mode : "instance" or "semantic" 
         - seed: Random seed for reproducibility.
         """
+        MEAN = [0.349, 0.354, 0.268]
+        STD = [0.114, 0.102, 0.094]
         assert type in ["train", "val", "test"], "Dataset type must be 'train', 'val', or 'test'."
         assert mode in ["building", "damage"], "Mode must be 'building' or 'damage'."
         assert task in ["instance","semantic"], "Task feature must be 'instance' or 'semantic'" 

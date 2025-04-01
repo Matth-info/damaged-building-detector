@@ -25,10 +25,10 @@ class Levir_cd_dataset(Change_Detection_Dataset):
         origin_dir (str): Root directory for dataset (where A, B, and label are located).
         type (str): Dataset type - "train", "val", or "test".
         transform (callable, optional): Optional transform to be applied to the images and labels.
-    
-    Dataset Mean: [0.3871232  0.38200352 0.32545044]
-    Dataset Std Dev: [0.15867973 0.14972445 0.13859262]
     """
+    MEAN = [0.387, 0.382, 0.325]
+    STD = [0.158, 0.150, 0.138]
+    
     def __init__(self, origin_dir=None, type="train", transform=None):
         # Folder names
         folder_A = 'A'
@@ -45,6 +45,7 @@ class Levir_cd_dataset(Change_Detection_Dataset):
         self.L_paths = sorted([x for x in (root_dir / folder_L).glob("*.*") if is_image_file(x)])
 
         print(f"Loaded {len(self)} {self.type} samples.")
+
     def __len__(self):
         """Returns the number of image pairs"""
         return len(self.A_paths)
