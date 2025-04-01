@@ -78,3 +78,6 @@ maildir
 
 # Pytest cache directory
 .pytest_cache/
+
+# gradio cache directory
+.gradio/
