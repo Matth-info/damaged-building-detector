@@ -49,6 +49,10 @@ class EnsembleModel(nn.Module):
         elif self.aggregation == "vote":
             return torch.mode(outputs.argmax(dim=-1), dim=0)[0]  # Majority vote on class predictions
 
+    @torch.no_grad()
+    def predict(self, *inputs):
+        self.forward(*inputs)
+        
     def test_compatibility(self, input_shape, siamese_input_shape=None):
         """
         Test compatibility of all models in the ensemble.

@@ -1,6 +1,7 @@
 from typing import List
 
 import torchvision
+import torch
 from torch import Tensor
 from torch.nn import Identity, Module, ModuleList
 
@@ -49,6 +50,10 @@ class TinyCD(Module):
         features = self._encode(x1, x2)
         latents = self._decode(features)
         return self._classify(latents)
+    
+    @torch.no_grad()
+    def predict(self, x1, x2):
+        self.forward(x1, x2)
 
     def _encode(self, x1, x2) -> List[Tensor]:
         features = [self._first_mix(x1, x2)]

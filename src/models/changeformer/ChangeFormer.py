@@ -2468,3 +2468,7 @@ class ChangeFormerV6(nn.Module):
 
         # exit()
         return cp
+
+    @torch.no_grad()
+    def predict(self, x1, x2):
+        self.forward(x1, x2)

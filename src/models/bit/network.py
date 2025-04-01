@@ -144,3 +144,6 @@ class BiT(nn.Module):
         x = F.interpolate(x, scale_factor=2, mode='bilinear', align_corners=False)
         return x
 
+    @torch.no_grad()
+    def predict(self, x1, x2):
+        self.forward(x1, x2)

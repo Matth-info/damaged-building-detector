@@ -1,52 +1,39 @@
+
 import torch
 import torch.nn as nn
-from torchvision.models import (
-    resnet18,
-    resnet34, 
-    resnet50, 
-    ResNet18_Weights,
-    ResNet34_Weights,
-    ResNet50_Weights
-)
 
+from .help_funcs import DecoderBlock, choose_resnet
 
 ### Inpired by FC-Siam-diff. from FULLY CONVOLUTIONAL SIAMESE NETWORKS FORCHANGE DETECTION by  Rodrigo Caye Daudt, Bertrand Le Saux, Alexandre Boulch
-def choose_resnet(model_name="resnet18", pretrained=True):
-    if model_name == "resnet18":
-        filters = [64, 64, 128, 256, 512]
-        return filters, resnet18(weights=ResNet18_Weights.DEFAULT if pretrained else None)
-    elif model_name == "resnet34":
-        filters = [64, 64, 128, 256, 512]
-        return filters, resnet34(weights=ResNet34_Weights.DEFAULT if pretrained else None)
-    elif model_name == "resnet50":
-        filters = [64, 256, 512, 1024, 2048]
-        return filters, resnet50(weights=ResNet50_Weights.DEFAULT if pretrained else None)
-    else:
-        raise ModuleNotFoundError
-
-class DecoderBlock(nn.Module):
-    def __init__(self, in_channels, mid_channels, out_channels):
-        super().__init__()
-        self.conv = nn.Conv2d(in_channels=in_channels, out_channels=mid_channels, kernel_size=3, stride=1, padding=1, bias=False)
-        self.norm1 = nn.BatchNorm2d(mid_channels)
-        self.relu1 = nn.ReLU(inplace=True)
-        self.upsample = nn.ConvTranspose2d(
-            in_channels=mid_channels, out_channels=out_channels,
-            kernel_size=3, stride=2, padding=1, output_padding=1, bias=False
-        )
-        self.norm2 = nn.BatchNorm2d(out_channels)
-        self.relu2 = nn.ReLU(inplace=True)
-
-    def forward(self, x):
-        x = self.conv(x)
-        x = self.norm1(x)
-        x = self.relu1(x)
-        x = self.upsample(x)
-        x = self.norm2(x)
-        x = self.relu2(x)
-        return x
-
 class SiameseResNetUNet(nn.Module):
+    """
+    Siamese U-Net with a ResNet backbone for remote sensing change detection.
+
+    This model compares pre- and post-event images using a shared encoder 
+    and a U-Net-style decoder. It supports two fusion modes:
+        - "diff": Computes absolute differences between feature maps.
+        - "conc": Concatenates feature maps.
+
+    Attributes:
+        in_channels (int): Number of input channels.
+        out_channels (int): Number of output channels.
+        mode (str): Feature fusion mode ("diff" or "conc").
+        backbone_name (str): Name of the ResNet backbone.
+        pretrained (bool): Whether to use a pre-trained ResNet.
+        freeze_backbone (bool): Whether to freeze backbone layers.
+
+    Methods:
+        freeze_backbone(): Freezes the encoder layers to prevent weight updates.
+        forward_branch(x): Processes an image through the encoder.
+        forward(x1, x2): Processes both images and predicts a change mask.
+        predict(x1, x2): Runs inference and returns a binary segmentation mask.
+        save(file_path): Saves the model weights.
+        load(file_path): Loads the model weights.
+
+    Example:
+        >>> model = SiameseResNetUNet(in_channels=3, out_channels=2, mode="diff")
+        >>> output = model(x1, x2)  # x1 and x2 are input images
+    """
     def __init__(
         self,
         in_channels=3,
@@ -162,13 +149,14 @@ class SiameseResNetUNet(nn.Module):
     @torch.no_grad()
     def predict(self, x1, x2):
         outputs = self.forward(x1, x2)
-        return torch.argmax(outputs, dim=1).cpu().numpy()
+        return torch.argmax(outputs, dim=1)
 
     def save(self, file_path):
         torch.save(self.state_dict(), file_path)
         print(f"{self.__class__.__name__} Model saved to {file_path}")
 
     def load(self, file_path):
-        self.load_state_dict(torch.load(file_path))
+        """Load model weights safely, avoiding untrusted pickle execution."""
+        self.load_state_dict(torch.load(file_path, weights_only=True))
         print(f"{self.__class__.__name__} Model loaded from {file_path}")
         return self

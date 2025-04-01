@@ -1,9 +1,9 @@
 from .Auto_Encoder import AutoEncoder
-from .ResNet_Unet import ResNet_UNET
+from .resnet_unet.Resnet_Unet import ResNet_UNET
 from .Segformer import Segformer
-from .Siamese_ResNet_Unet import SiameseResNetUNet
-from .bit.networks import BiT
-from .Unet import UNet
+from .resnet_unet.Siamese_Resnet_Unet import SiameseResNetUNet
+from .bit.network import BiT
+from .unet.network import UNet
 from .MaskRCNN import Maskrcnn
 from .tiny_cd.change_classifier import TinyCD
 from .changeformer.ChangeFormer import ChangeFormerV6 as ChangeFormer
