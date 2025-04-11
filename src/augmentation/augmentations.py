@@ -1,14 +1,12 @@
 from typing import List, Callable
 
+import torch.nn as nn
 import albumentations as A
 from albumentations.pytorch import ToTensorV2
 from albumentations.core.composition import OneOf
-import torch.nn as nn
-import torch
+
 import numpy as np
 
-
-### Augmentation Test Time
 
 def load_augmentation_pipeline(config_path="augmentation_config.yaml"):
     return A.load(config_path, data_format='yaml')
@@ -61,9 +59,6 @@ def get_val_augmentation_pipeline(image_size=None, max_pixel_value=1, mean=None,
         }
     )
     return transform
-
-# ImageNet Mean: [0.485, 0.456, 0.406], Std = [0.229, 0.224, 0.225]
-# Levir-CD Mean: [0.387 , 0.382, 0.325], Std = [0.158, 0.150, 0.138]
 
 ###### AutoEncoder Augmentation Pipeline #######
 def get_train_autoencoder_augmentation_pipeline(image_size=None):
