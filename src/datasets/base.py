@@ -8,6 +8,9 @@ import albumentations as A
 class Building_Dataset(Dataset):
     """ General Class for Building Related Pytorch Dataset"""
 
+    MEAN = None 
+    STD = None
+
     def __init__(self, origin_dir : str, type : str = None, transform : Optional[A.Compose] = None):
         self.origin_dir = Path(origin_dir)
 

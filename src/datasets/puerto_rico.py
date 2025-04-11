@@ -16,6 +16,10 @@ import numpy as np
 from .base import Segmentation_Dataset
 
 class Puerto_Rico_Building_Dataset(Segmentation_Dataset):
+
+    MEAN = None 
+    STD = None 
+    
     def __init__(
         self,
         base_dir: str,

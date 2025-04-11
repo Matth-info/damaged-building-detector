@@ -10,6 +10,10 @@ import albumentations as A
 from .base import Segmentation_Dataset
 
 class OpenCities_Building_Dataset(Segmentation_Dataset):
+
+    MEAN = None 
+    STD = None
+    
     def __init__(
         self, 
         images_dir: str, 
