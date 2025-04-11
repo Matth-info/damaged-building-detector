@@ -10,8 +10,8 @@ from torch.utils.data import DataLoader
 import matplotlib.pyplot as plt
 import numpy as np
 
-from src.augmentation import get_val_augmentation_pipeline
-from src.utils.visualization import renormalize_image
+from src.augmentation import Augmentation_pipeline
+from src.data import renormalize_image
 from src.explanability.help_funcs import read_config, DATASET_MAPPER, MODEL_MAPPER
 
 
@@ -165,7 +165,7 @@ def main():
     mean, std = dataset_class.MEAN, dataset_class.STD
 
     image_size = config_dict.get("image_size")
-    transform = get_val_augmentation_pipeline(image_size=(image_size, image_size), mean=mean, std=std)
+    transform = Augmentation_pipeline(image_size=(image_size, image_size), mean=mean, std=std, mode="test")
     dataset = dataset_class(origin_dir=dataset_path, type="test", transform=transform)
     dataloader = DataLoader(dataset, batch_size=1, shuffle=True)
 
