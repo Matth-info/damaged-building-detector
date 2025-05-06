@@ -6,8 +6,15 @@ from torchvision.models import resnet18, resnet34, resnet50
 from torchvision.models import ResNet18_Weights, ResNet34_Weights, ResNet50_Weights
 from .help_funcs import Transformer, TransformerDecoder, TwoLayerConv2d
 
+
 class ResNetBackbone(nn.Module):
-    def __init__(self, resnet_stages_num=5, backbone="resnet18", pretrained=True, if_upsample_2x=True):
+    def __init__(
+        self,
+        resnet_stages_num=5,
+        backbone="resnet18",
+        pretrained=True,
+        if_upsample_2x=True,
+    ):
         super().__init__()
         expand = 1
         if backbone == "resnet18":
@@ -15,8 +22,10 @@ class ResNetBackbone(nn.Module):
         elif backbone == "resnet34":
             self.resnet = resnet34(weights=ResNet34_Weights.DEFAULT if pretrained else None)
         elif backbone == "resnet50":
-            self.resnet = resnet50(weights=ResNet50_Weights.DEFAULT if pretrained else None,
-                                   replace_stride_with_dilation=[False, True, True])
+            self.resnet = resnet50(
+                weights=ResNet50_Weights.DEFAULT if pretrained else None,
+                replace_stride_with_dilation=[False, True, True],
+            )
             expand = 4
         else:
             raise NotImplementedError("Unsupported ResNet backbone")
@@ -55,16 +64,34 @@ class ResNetBackbone(nn.Module):
 
 
 class BiT(nn.Module):
-    def __init__(self, input_nc=3, output_nc=2, with_pos="learned", resnet_stages_num=5,
-                 token_len=4, token_trans=True, enc_depth=1, dec_depth=1,
-                 dim_head=64, decoder_dim_head=64, tokenizer=True, if_upsample_2x=True,
-                 pool_mode="max", pool_size=2, backbone="resnet18",
-                 decoder_softmax=True, with_decoder_pos=None, with_decoder=True):
+    def __init__(
+        self,
+        input_nc=3,
+        output_nc=2,
+        with_pos="learned",
+        resnet_stages_num=5,
+        token_len=4,
+        token_trans=True,
+        enc_depth=1,
+        dec_depth=1,
+        dim_head=64,
+        decoder_dim_head=64,
+        tokenizer=True,
+        if_upsample_2x=True,
+        pool_mode="max",
+        pool_size=2,
+        backbone="resnet18",
+        decoder_softmax=True,
+        with_decoder_pos=None,
+        with_decoder=True,
+    ):
         super().__init__()
 
-        self.backbone = ResNetBackbone(resnet_stages_num=resnet_stages_num,
-                                       backbone=backbone,
-                                       if_upsample_2x=if_upsample_2x)
+        self.backbone = ResNetBackbone(
+            resnet_stages_num=resnet_stages_num,
+            backbone=backbone,
+            if_upsample_2x=if_upsample_2x,
+        )
 
         self.token_len = token_len
         self.tokenizer = tokenizer
@@ -93,9 +120,23 @@ class BiT(nn.Module):
             self.pos_embedding_decoder = nn.Parameter(torch.randn(1, dim, decoder_pos_size, decoder_pos_size))
 
         # Transformer layers
-        self.transformer = Transformer(dim=dim, depth=enc_depth, heads=8, dim_head=dim_head, mlp_dim=mlp_dim, dropout=0)
-        self.transformer_decoder = TransformerDecoder(dim=dim, depth=dec_depth, heads=8, dim_head=decoder_dim_head,
-                                                      mlp_dim=mlp_dim, dropout=0, softmax=decoder_softmax)
+        self.transformer = Transformer(
+            dim=dim,
+            depth=enc_depth,
+            heads=8,
+            dim_head=dim_head,
+            mlp_dim=mlp_dim,
+            dropout=0,
+        )
+        self.transformer_decoder = TransformerDecoder(
+            dim=dim,
+            depth=dec_depth,
+            heads=8,
+            dim_head=decoder_dim_head,
+            mlp_dim=mlp_dim,
+            dropout=0,
+            softmax=decoder_softmax,
+        )
 
         # Final classification layer
         self.classifier = TwoLayerConv2d(in_channels=32, out_channels=output_nc)
@@ -141,7 +182,7 @@ class BiT(nn.Module):
         x = F.interpolate(x, scale_factor=4, mode="bilinear", align_corners=False)
         x = self.classifier(x)
         # **Final upsampling to ensure x2 scaling**
-        x = F.interpolate(x, scale_factor=2, mode='bilinear', align_corners=False)
+        x = F.interpolate(x, scale_factor=2, mode="bilinear", align_corners=False)
         return x
 
     @torch.no_grad()

@@ -3,10 +3,11 @@ import torchvision
 from torch import nn
 from torchvision.models.detection.faster_rcnn import FastRCNNPredictor
 from torchvision.models.detection.mask_rcnn import MaskRCNNPredictor
-import numpy as np 
+import numpy as np
+
 
 class Maskrcnn(nn.Module):
-    def __init__(self, num_classes: int, hidden_layer_dim = 256, pretrained: bool = True):
+    def __init__(self, num_classes: int, hidden_layer_dim=256, pretrained: bool = True):
         """
         Wrapper for Mask R-CNN instance segmentation model.
 
@@ -26,9 +27,7 @@ class Maskrcnn(nn.Module):
         # Replace the mask predictor for segmentation
         in_features_mask = self.model.roi_heads.mask_predictor.conv5_mask.in_channels
         hidden_layer = hidden_layer_dim
-        self.model.roi_heads.mask_predictor = MaskRCNNPredictor(
-            in_features_mask, hidden_layer, num_classes
-        )
+        self.model.roi_heads.mask_predictor = MaskRCNNPredictor(in_features_mask, hidden_layer, num_classes)
 
     def forward(self, images, targets=None):
         """
@@ -47,12 +46,12 @@ class Maskrcnn(nn.Module):
     def predict_sem_seg(self, images, score_threshold: float = 0.5, mask_threshold: float = 0.5):
         """
         Predict semantic segmentation masks while resolving overlapping regions.
-        
+
         Args:
             images (Tensor): Batch of input images.
             score_threshold (float): Minimum confidence score to consider a prediction.
             mask_threshold (float): Threshold for binarizing instance masks.
-        
+
         Returns:
             Tensor of semantic segmentation masks for the batch.
         """
@@ -70,11 +69,11 @@ class Maskrcnn(nn.Module):
 
             if len(pred_masks) > 0:
                 binarized_masks = (pred_masks > mask_threshold).squeeze(1)  # Shape: [N, H, W]
-                
+
                 # Create a score map and a label map
                 score_map = torch.zeros_like(binarized_masks[0], dtype=torch.float32)  # Shape: [H, W]
                 label_map = torch.zeros_like(binarized_masks[0], dtype=torch.int64)  # Shape: [H, W]
-                
+
                 # Iterate through each instance
                 for mask, label, score in zip(binarized_masks, pred_labels, pred_scores):
                     # Update the label map only where the current instance has higher confidence
@@ -89,13 +88,13 @@ class Maskrcnn(nn.Module):
 
             semantic_masks.append(semantic_mask)
         semantic_masks = np.array(semantic_masks)
-        
+
         return torch.from_numpy(semantic_masks).to(dtype=torch.int64, device="cuda")
 
     @torch.no_grad()
     def predict(self, images):
         return self.model(images)
-    
+
     def save(self, filepath: str):
         """
         Save the model's state dictionary and configuration.
@@ -103,10 +102,13 @@ class Maskrcnn(nn.Module):
         Parameters:
             filepath (str): Path to save the model file.
         """
-        torch.save({
-            'state_dict': self.state_dict(),
-            'num_classes': self.model.roi_heads.box_predictor.cls_score.out_features,
-        }, filepath)
+        torch.save(
+            {
+                "state_dict": self.state_dict(),
+                "num_classes": self.model.roi_heads.box_predictor.cls_score.out_features,
+            },
+            filepath,
+        )
         print(f"Model saved to {filepath}")
 
     def load(self, filepath: str):
@@ -116,17 +118,18 @@ class Maskrcnn(nn.Module):
         Parameters:
             filepath (str): Path to the saved model file.
         """
-        checkpoint = torch.load(filepath, map_location='cpu')  # Adjust map_location if needed
-        self.load_state_dict(checkpoint['state_dict'])
-        
+        checkpoint = torch.load(filepath, map_location="cpu")  # Adjust map_location if needed
+        self.load_state_dict(checkpoint["state_dict"])
+
         # Reconfigure the model's box predictor if num_classes differs
-        num_classes = checkpoint['num_classes']
+        num_classes = checkpoint["num_classes"]
         if num_classes != self.model.roi_heads.box_predictor.cls_score.out_features:
             print(f"Adjusting the box predictor for {num_classes} classes.")
             in_features = self.model.roi_heads.box_predictor.cls_score.in_features
             self.model.roi_heads.box_predictor = FastRCNNPredictor(in_features, num_classes)
-        
+
         print(f"Model loaded from {filepath}")
+
 
 # Example usage:
 # num_classes = 3  # Including the background class

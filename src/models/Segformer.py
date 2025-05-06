@@ -70,9 +70,7 @@ class Segformer(nn.Module):
         # Forward pass through the model
         outputs = self.model(**inputs)
 
-        logits = F.interpolate(
-            outputs.logits, size=original_size, mode="bilinear", align_corners=False
-        )
+        logits = F.interpolate(outputs.logits, size=original_size, mode="bilinear", align_corners=False)
 
         return logits
 
@@ -133,17 +131,19 @@ class Segformer(nn.Module):
         """
         print(f"Loading model from {path}...")
         config = AutoConfig.from_pretrained(path, trust_remote_code=True, local_files_only=True)
-        model = AutoModelForSemanticSegmentation.from_pretrained(path, config=config, trust_remote_code=True, local_files_only=True)
-        image_processor = AutoImageProcessor.from_pretrained(path, trust_remote_code=True,  local_files_only=True)
-        
+        model = AutoModelForSemanticSegmentation.from_pretrained(
+            path, config=config, trust_remote_code=True, local_files_only=True
+        )
+        image_processor = AutoImageProcessor.from_pretrained(path, trust_remote_code=True, local_files_only=True)
+
         # Create an instance of the Segformer class
         segformer_instance = cls(
             model_name=path,
             label2id=config.label2id,
             num_labels=config.num_labels,
-            freeze_encoder=freeze_encoder
+            freeze_encoder=freeze_encoder,
         )
-        
+
         # Replace loaded components into the instance
         segformer_instance.model = model
         segformer_instance.image_processor = image_processor

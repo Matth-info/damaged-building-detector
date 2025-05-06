@@ -3,6 +3,7 @@ import torch.nn as nn
 
 from .help_funcs import DecoderBlock, choose_resnet
 
+
 class ResNet_UNET(nn.Module):
     def __init__(
         self,
@@ -16,7 +17,7 @@ class ResNet_UNET(nn.Module):
 
         # Modify first layer of ResNet34 to accept custom number of channels
         self.filters, resnet = choose_resnet(model_name=backbone_name, pretrained=pretrained)  # Change this line
-       
+
         # Modify input channels if not 3
         if in_channels != 3:
             self.firstconv = nn.Conv2d(
@@ -25,34 +26,50 @@ class ResNet_UNET(nn.Module):
                 kernel_size=7,
                 stride=2,
                 padding=3,
-                bias=False
+                bias=False,
             )
             # Replace original ResNet conv1
         else:
             self.firstconv = resnet.conv1
-        
+
         self.firstbn = resnet.bn1
         self.firstrelu = resnet.relu
         self.firstmaxpool = resnet.maxpool
-        # Extract the 3 first Blocks from ResNet 
-        self.encoder1 = resnet.layer1 # 2 ResNet Basic Blocks : in (filter[0] -> filter[1])
-        self.encoder2 = resnet.layer2 # 2 Basic Blocks : (filter[1] -> filter[2])
-        self.encoder3 = resnet.layer3 # 2 Basic Blocks : (filter[2] -> filter[3])
-        
-        self.center = DecoderBlock(in_channels=self.filters[3], mid_channels=self.filters[3]*4, out_channels=self.filters[3])
-        
-        self.decoder1 = DecoderBlock(in_channels=self.filters[3]+self.filters[2], mid_channels=self.filters[2]*4, out_channels=self.filters[2])
-        self.decoder2 = DecoderBlock(in_channels=self.filters[2]+self.filters[1], mid_channels=self.filters[1]*4, out_channels=self.filters[1])
-        self.decoder3 = DecoderBlock(in_channels=self.filters[1]+self.filters[0], mid_channels=self.filters[0]*4, out_channels=self.filters[0])
-        
+        # Extract the 3 first Blocks from ResNet
+        self.encoder1 = resnet.layer1  # 2 ResNet Basic Blocks : in (filter[0] -> filter[1])
+        self.encoder2 = resnet.layer2  # 2 Basic Blocks : (filter[1] -> filter[2])
+        self.encoder3 = resnet.layer3  # 2 Basic Blocks : (filter[2] -> filter[3])
+
+        self.center = DecoderBlock(
+            in_channels=self.filters[3],
+            mid_channels=self.filters[3] * 4,
+            out_channels=self.filters[3],
+        )
+
+        self.decoder1 = DecoderBlock(
+            in_channels=self.filters[3] + self.filters[2],
+            mid_channels=self.filters[2] * 4,
+            out_channels=self.filters[2],
+        )
+        self.decoder2 = DecoderBlock(
+            in_channels=self.filters[2] + self.filters[1],
+            mid_channels=self.filters[1] * 4,
+            out_channels=self.filters[1],
+        )
+        self.decoder3 = DecoderBlock(
+            in_channels=self.filters[1] + self.filters[0],
+            mid_channels=self.filters[0] * 4,
+            out_channels=self.filters[0],
+        )
+
         self.final = nn.Sequential(
-                nn.Conv2d(in_channels=self.filters[0], out_channels=32, kernel_size=3, padding=1),
-                nn.BatchNorm2d(32), 
-                nn.ReLU(inplace=True),
-                nn.Conv2d(in_channels=32, out_channels=out_channels, kernel_size=1),
-                nn.ReLU(inplace=True)
-                )
-        
+            nn.Conv2d(in_channels=self.filters[0], out_channels=32, kernel_size=3, padding=1),
+            nn.BatchNorm2d(32),
+            nn.ReLU(inplace=True),
+            nn.Conv2d(in_channels=32, out_channels=out_channels, kernel_size=1),
+            nn.ReLU(inplace=True),
+        )
+
         if freeze_backbone:
             self.freeze_backbone(in_channels)
 
@@ -68,10 +85,10 @@ class ResNet_UNET(nn.Module):
             for param in layer.parameters():
                 param.requires_grad = False
 
-    def forward(self, x): 
+    def forward(self, x):
         x = self.firstconv(x)
         x = self.firstbn(x)
-        x = self.firstrelu(x) 
+        x = self.firstrelu(x)
 
         x_ = self.firstmaxpool(x)
 

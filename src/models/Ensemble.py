@@ -1,11 +1,12 @@
 import torch
 import torch.nn as nn
 
+
 class EnsembleModel(nn.Module):
     def __init__(self, models, aggregation="mean", is_siamese=False):
         """
         Ensemble of models, supporting both Siamese and non-Siamese networks.
-        
+
         Args:
             models (list of nn.Module): List of PyTorch models to be used in the ensemble.
             aggregation (str): Aggregation method to combine model outputs.
@@ -52,7 +53,7 @@ class EnsembleModel(nn.Module):
     @torch.no_grad()
     def predict(self, *inputs):
         self.forward(*inputs)
-        
+
     def test_compatibility(self, input_shape, siamese_input_shape=None):
         """
         Test compatibility of all models in the ensemble.
@@ -60,7 +61,7 @@ class EnsembleModel(nn.Module):
         Args:
             input_shape (tuple): Expected input shape for non-Siamese networks.
             siamese_input_shape (tuple): Expected input shape for Siamese networks.
-        
+
         Returns:
             bool: True if all models are compatible, False otherwise.
         """

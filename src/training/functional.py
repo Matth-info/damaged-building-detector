@@ -1,4 +1,5 @@
 from typing import List, Callable, Dict, Optional, Tuple
+
 # PyTorch imports
 import torch
 import torch.nn as nn
@@ -16,8 +17,8 @@ import albumentations as A
 import time
 import numpy as np
 import math
-import logging 
-from tqdm import tqdm 
+import logging
+from tqdm import tqdm
 
 
 from .utils import (
@@ -31,17 +32,20 @@ from .utils import (
     custom_infer_signature,
     save_checkpoint,
     load_checkpoint,
-    initialize_optimizer_scheduler
+    initialize_optimizer_scheduler,
 )
 
 from src.metrics import compute_model_class_performance
 
-from ..augmentation.augmentations import augmentation_test_time, augmentation_test_time_siamese
+from src.augmentation.augmentations import (
+    augmentation_test_time,
+    augmentation_test_time_siamese,
+)
 
 # from custom metrics and losses
 from src.metrics import get_stats
 
-# mlflow 
+# mlflow
 import mlflow
 
 # Configure logging
@@ -65,7 +69,7 @@ def training_step(
     reduction: str = "weighted",
     class_weights: List[float] = [0.1, 0.9],
     max_norm: float = 1.0,
-    siamese: bool = False
+    siamese: bool = False,
 ) -> Tuple[float, Dict[str, float]]:
     """
     Perform a single training step on a batch of data, supporting Siamese architectures.
@@ -96,8 +100,10 @@ def training_step(
         x1 = batch["pre_image"].to(device, non_blocking=True, dtype=torch.float32)  # Pre-disaster image
         x2 = batch["post_image"].to(device, non_blocking=True, dtype=torch.float32)  # Post-disaster image
     else:
-        x = batch[image_key].to(device, non_blocking=True, dtype=torch.float32)  # Single input image e.g., FloatTensor (B, C, H, W)
-    
+        x = batch[image_key].to(
+            device, non_blocking=True, dtype=torch.float32
+        )  # Single input image e.g., FloatTensor (B, C, H, W)
+
     y = batch[mask_key].to(device, non_blocking=True, dtype=torch.int64)  # Target mask e.g., LongTensor (B, H, W)
 
     optimizer.zero_grad()
@@ -139,16 +145,12 @@ def training_step(
         preds = outputs.argmax(dim=1).long()  # Shape: (B, H, W)
 
         # Calculate statistics for metrics (e.g., confusion matrix components)
-        tp, fp, fn, tn = get_stats(
-            output=preds, target=y, mode=mode, num_classes=num_classes
-        )
+        tp, fp, fn, tn = get_stats(output=preds, target=y, mode=mode, num_classes=num_classes)
 
         # Compute each metric
         for metric in metrics:
             metric_name = metric.__name__
-            metrics_step[metric_name] = metric(
-                tp, fp, fn, tn, class_weights=class_weights, reduction=reduction
-            )
+            metrics_step[metric_name] = metric(tp, fp, fn, tn, class_weights=class_weights, reduction=reduction)
 
     return loss_value, metrics_step
 
@@ -165,9 +167,9 @@ def validation_step(
     mode: str = "multiclass",
     num_classes: int = 2,
     reduction: str = "weighted",
-    class_weights: List[float] = None, 
+    class_weights: List[float] = None,
     tta: bool = False,
-    siamese: bool = False
+    siamese: bool = False,
 ) -> Tuple[float, Dict[str, float]]:
     """
     Perform a single validation step on a batch of data.
@@ -194,7 +196,7 @@ def validation_step(
         x2 = batch["post_image"].to(device, non_blocking=True, dtype=torch.float32)  # Post-disaster image
     else:
         x = batch[image_key].to(device, non_blocking=True, dtype=torch.float32)  # Single input image
-    
+
     y = batch[mask_key].to(device, non_blocking=True, dtype=torch.int64)  # Target mask
 
     # Disable gradients for validation
@@ -205,30 +207,30 @@ def validation_step(
                 if tta:
                     if siamese:
                         outputs = augmentation_test_time_siamese(
-                            model=model, 
-                            images_1=x1, 
-                            images_2=x2, 
+                            model=model,
+                            images_1=x1,
+                            images_2=x2,
                             list_augmentations=[
-                                                A.HorizontalFlip(p=1.0),  # Horizontal flip
-                                                A.VerticalFlip(p=1.0)    # Vertical flip
-                                            ],
-                            aggregation="mean", 
-                            device=device
-                            )
+                                A.HorizontalFlip(p=1.0),  # Horizontal flip
+                                A.VerticalFlip(p=1.0),  # Vertical flip
+                            ],
+                            aggregation="mean",
+                            device=device,
+                        )
                     else:
                         outputs = augmentation_test_time(
-                            model=model, 
-                            images=x, 
+                            model=model,
+                            images=x,
                             list_augmentations=[
-                                                A.HorizontalFlip(p=1.0),  # Horizontal flip
-                                                A.VerticalFlip(p=1.0)    # Vertical flip
-                                            ],
-                            aggregation="mean", 
-                            device=device
+                                A.HorizontalFlip(p=1.0),  # Horizontal flip
+                                A.VerticalFlip(p=1.0),  # Vertical flip
+                            ],
+                            aggregation="mean",
+                            device=device,
                         )
                 else:
                     if siamese:
-                        outputs = model(x1,x2)
+                        outputs = model(x1, x2)
                     else:
                         outputs = model(x)
                 vloss = loss_fn(outputs, y)
@@ -236,30 +238,30 @@ def validation_step(
             if tta:
                 if siamese:
                     outputs = augmentation_test_time_siamese(
-                        model=model, 
-                        images_1=x1, 
-                        images_2=x2, 
+                        model=model,
+                        images_1=x1,
+                        images_2=x2,
                         list_augmentations=[
-                                            A.HorizontalFlip(p=1.0),  # Horizontal flip
-                                            A.VerticalFlip(p=1.0)    # Vertical flip
-                                        ],
-                        aggregation="mean", 
-                        device=device
-                        )
+                            A.HorizontalFlip(p=1.0),  # Horizontal flip
+                            A.VerticalFlip(p=1.0),  # Vertical flip
+                        ],
+                        aggregation="mean",
+                        device=device,
+                    )
                 else:
                     outputs = augmentation_test_time(
-                        model=model, 
-                        images=x, 
+                        model=model,
+                        images=x,
                         list_augmentations=[
-                                            A.HorizontalFlip(p=1.0),  # Horizontal flip
-                                            A.VerticalFlip(p=1.0)    # Vertical flip
-                                        ],
-                        aggregation="mean", 
-                        device=device
+                            A.HorizontalFlip(p=1.0),  # Horizontal flip
+                            A.VerticalFlip(p=1.0),  # Vertical flip
+                        ],
+                        aggregation="mean",
+                        device=device,
                     )
             else:
                 if siamese:
-                    outputs = model(x1,x2)
+                    outputs = model(x1, x2)
                 else:
                     outputs = model(x)
 
@@ -274,15 +276,18 @@ def validation_step(
     # Compute predictions and metrics
     with torch.no_grad():
         # Get predictions: Output shape from (B, C, H, W) => (B, H, W)
-        if len(outputs.shape) == 4: 
+        if len(outputs.shape) == 4:
             preds = outputs.argmax(dim=1).long()
-        
+
         if len(outputs.shape) == 3:
             preds = outputs.long()
 
         # Compute confusion matrix components
         tp, fp, fn, tn = get_stats(
-            output=preds, target=y, mode=mode, num_classes=num_classes,
+            output=preds,
+            target=y,
+            mode=mode,
+            num_classes=num_classes,
         )
 
         # Calculate each metric
@@ -292,6 +297,7 @@ def validation_step(
             metrics_step[metric_name] = metric_value
 
     return vloss_value, metrics_step
+
 
 def training_epoch(
     model: nn.Module,
@@ -309,7 +315,7 @@ def training_epoch(
     is_mixed_precision: bool = False,
     reduction: str = "weighted",
     class_weights: List[float] = None,
-    siamese: bool = False
+    siamese: bool = False,
 ):
     """
     Perform one epoch of training.
@@ -360,7 +366,7 @@ def training_epoch(
                 num_classes=num_classes,
                 reduction=reduction,
                 class_weights=class_weights,
-                siamese=siamese
+                siamese=siamese,
             )
 
             # Update loss and metrics accumulators
@@ -374,9 +380,7 @@ def training_epoch(
 
             # Log intermediate results at intervals
             if step % training_log_interval == 0:
-                step_metrics = {
-                    name: value / max(1, interval_samples) for name, value in total_metrics.items()
-                }
+                step_metrics = {name: value / max(1, interval_samples) for name, value in total_metrics.items()}
                 step_number = epoch_number * steps_per_epoch + step
                 log_metrics(metrics=step_metrics, step_number=step_number, phase="Training")
                 log_loss(
@@ -391,9 +395,7 @@ def training_epoch(
 
     # Calculate epoch-level loss and metrics
     epoch_loss = running_loss / len(train_dl.dataset)
-    epoch_metrics = {
-        name: value / len(train_dl.dataset) for name, value in total_metrics.items()
-    }
+    epoch_metrics = {name: value / len(train_dl.dataset) for name, value in total_metrics.items()}
 
     # Log epoch summary
     if verbose:
@@ -409,6 +411,7 @@ def training_epoch(
 
     return epoch_loss, epoch_metrics
 
+
 def validation_epoch(
     model: nn.Module,
     valid_dl: DataLoader,
@@ -417,14 +420,14 @@ def validation_epoch(
     metrics: List[Callable] = None,
     image_key: str = "image",
     mask_key: str = "mask",
-    num_classes: int = 2, 
+    num_classes: int = 2,
     verbose: bool = True,  # Adding verbose flag to control logging
     training_log_interval: int = 10,  # Define default interval for logging,
     is_mixed_precision: bool = False,
     class_weights: List[float] = None,
     reduction: str = "weighted",
     tta: bool = False,
-    siamese: bool = False
+    siamese: bool = False,
 ) -> Tuple[float, Dict[str, float]]:
     """
     Perform one epoch of validation.
@@ -453,7 +456,12 @@ def validation_epoch(
     step = 0
 
     # Iterate through the validation dataset
-    with tqdm(valid_dl, desc=f"Validation Epoch {epoch_number + 1}", unit="batch", disable=False) as t:
+    with tqdm(
+        valid_dl,
+        desc=f"Validation Epoch {epoch_number + 1}",
+        unit="batch",
+        disable=False,
+    ) as t:
         for batch in t:
             batch_size = batch[image_key].size(0)
 
@@ -467,10 +475,10 @@ def validation_epoch(
                 mask_key=mask_key,
                 num_classes=num_classes,
                 is_mixed_precision=is_mixed_precision,
-                class_weights=class_weights, 
+                class_weights=class_weights,
                 reduction=reduction,
                 tta=tta,
-                siamese=siamese
+                siamese=siamese,
             )
 
             # Accumulate validation loss
@@ -484,9 +492,7 @@ def validation_epoch(
             # Accumulate metrics at defined intervals
             if step % training_log_interval == 0:
                 # Log intermediate metrics
-                step_metrics = {
-                    name: value / max(1, interval_samples) for name, value in total_metrics.items()
-                }
+                step_metrics = {name: value / max(1, interval_samples) for name, value in total_metrics.items()}
                 step_number = epoch_number * steps_per_epoch + step
                 log_metrics(metrics=step_metrics, step_number=step_number, phase="Validation")
 
@@ -503,9 +509,7 @@ def validation_epoch(
 
     # Calculate average loss and metrics for the entire validation dataset
     epoch_vloss = running_loss / len(valid_dl.dataset)
-    epoch_metrics = {
-        name: total / len(valid_dl.dataset) for name, total in total_metrics.items()
-    }
+    epoch_metrics = {name: total / len(valid_dl.dataset) for name, total in total_metrics.items()}
 
     # Log final metrics for the validation phase
     if verbose:
@@ -513,6 +517,7 @@ def validation_epoch(
         display_metrics(metrics=epoch_metrics, phase="Validation")
 
     return epoch_vloss, epoch_metrics
+
 
 def train(
     model: nn.Module,
@@ -535,15 +540,15 @@ def train(
     mask_key: str = "mask",
     verbose: bool = True,  # Adding verbose flag
     checkpoint_interval: int = 10,  # Add checkpoint interval parameter
-    debug: bool = False,  # Add debug flag for memory logging, 
+    debug: bool = False,  # Add debug flag for memory logging,
     device: str = "cuda" if torch.cuda.is_available() else "cpu",
-    num_classes: int = 2, 
-    training_log_interval: int = 1, 
+    num_classes: int = 2,
+    training_log_interval: int = 1,
     is_mixed_precision: bool = False,
     reduction: str = "weighted",
     class_weights: List[float] = None,
     class_names: List[str] = None,
-    siamese: bool = False, 
+    siamese: bool = False,
     tta: bool = False,
 ):
     # Connect MLFlow session to the local server
@@ -563,21 +568,38 @@ def train(
     os.makedirs(log_dir, exist_ok=True)
 
     if resume_path:
-        epoch = load_checkpoint(checkpoint_path=resume_path, model=model, optimizer=optimizer, scheduler=scheduler)
-        start_epoch = epoch + 1 
+        epoch = load_checkpoint(
+            checkpoint_path=resume_path,
+            model=model,
+            optimizer=optimizer,
+            scheduler=scheduler,
+        )
+        start_epoch = epoch + 1
     else:
         start_epoch = 0
 
     # Handling None values
     params_opt = params_opt or {"lr": 1e-4}
     params_sc = params_sc or {}
-    early_stopping_params = early_stopping_params or {"patience": nb_epochs, "trigger_times": 0}
+    early_stopping_params = early_stopping_params or {
+        "patience": nb_epochs,
+        "trigger_times": 0,
+    }
 
-    optimizer_ft, lr_scheduler = initialize_optimizer_scheduler(model, optimizer, scheduler, optimizer_params=params_opt, scheduler_params=params_sc)
+    optimizer_ft, lr_scheduler = initialize_optimizer_scheduler(
+        model,
+        optimizer,
+        scheduler,
+        optimizer_params=params_opt,
+        scheduler_params=params_sc,
+    )
 
     best_val_loss = 10e6
     overall_start_time = time.time()
-    patience, trigger_times = early_stopping_params["patience"], early_stopping_params["trigger_times"]
+    patience, trigger_times = (
+        early_stopping_params["patience"],
+        early_stopping_params["trigger_times"],
+    )
     max_images = 1
 
     model.to(device)
@@ -593,7 +615,7 @@ def train(
         "num_classes": num_classes,
         "is_mixed_precision": is_mixed_precision,
         "reduction": reduction,
-        "class_names": class_names, 
+        "class_names": class_names,
         "class_weights": class_weights,
         "siamese": siamese,
         "learning_rate": params_opt.get("lr", 1e-4),
@@ -602,66 +624,69 @@ def train(
         "early_stopping_params": early_stopping_params,
         "checkpoint_interval": checkpoint_interval,
         "training_log_interval": training_log_interval,
-        "tta": tta
+        "tta": tta,
+        "mean": train_dl.dataset.MEAN,
+        "std": train_dl.dataset.STD,
     }
 
     # Create model signature
-    signature, input_example = custom_infer_signature(model,
+    signature, input_example = custom_infer_signature(
+        model,
         data_loader=test_dl,
         siamese=siamese,
         image_key=image_key,
         mask_key=mask_key,
-        device=device
+        device=device,
     )
 
     mlflow.enable_system_metrics_logging()
     system_log_bool = True
-    with mlflow.start_run() as run: 
-        mlflow.set_tag('mlflow.runName', run_name)
+    with mlflow.start_run() as run:
+        mlflow.set_tag("mlflow.runName", run_name)
         # Log hyperparameters
         mlflow.log_params(hyperparams)
         logging.info("Hyperparameters have been logged")
 
-        # Training / Validation phases 
+        # Training / Validation phases
         for epoch in range(start_epoch, nb_epochs):
             start_time = time.time()
 
             # Train phase
             epoch_loss, epoch_metrics = training_epoch(
-                model=model, 
-                train_dl=train_dl, 
-                loss_fn=loss_fn, 
-                metrics=metrics, 
-                optimizer=optimizer_ft, 
+                model=model,
+                train_dl=train_dl,
+                loss_fn=loss_fn,
+                metrics=metrics,
+                optimizer=optimizer_ft,
                 scheduler=lr_scheduler,
-                epoch_number=epoch, 
+                epoch_number=epoch,
                 image_key=image_key,
                 mask_key=mask_key,
                 num_classes=num_classes,
-                verbose=verbose, 
-                training_log_interval=training_log_interval,
-                is_mixed_precision=is_mixed_precision,
-                reduction=reduction,
-                class_weights=class_weights, 
-                siamese=siamese
-            )
-
-            # Validation phase
-            epoch_vloss, epoch_vmetrics = validation_epoch(
-                model=model, 
-                valid_dl=valid_dl, 
-                loss_fn=loss_fn, 
-                epoch_number=epoch, 
-                metrics=metrics,
-                image_key=image_key, 
-                mask_key=mask_key, 
                 verbose=verbose,
                 training_log_interval=training_log_interval,
                 is_mixed_precision=is_mixed_precision,
                 reduction=reduction,
                 class_weights=class_weights,
                 siamese=siamese,
-                num_classes=num_classes
+            )
+
+            # Validation phase
+            epoch_vloss, epoch_vmetrics = validation_epoch(
+                model=model,
+                valid_dl=valid_dl,
+                loss_fn=loss_fn,
+                epoch_number=epoch,
+                metrics=metrics,
+                image_key=image_key,
+                mask_key=mask_key,
+                verbose=verbose,
+                training_log_interval=training_log_interval,
+                is_mixed_precision=is_mixed_precision,
+                reduction=reduction,
+                class_weights=class_weights,
+                siamese=siamese,
+                num_classes=num_classes,
             )
 
             if system_log_bool:
@@ -681,7 +706,7 @@ def train(
             step_number = (epoch + 1) * steps_per_epoch
             log_metrics(metrics=epoch_metrics, step_number=step_number, phase="Training")
             log_metrics(metrics=epoch_vmetrics, step_number=step_number, phase="Validation")
-            
+
             # Log sample images after validation epoch
             log_images_to_mlflow(
                 model=model,
@@ -691,15 +716,23 @@ def train(
                 max_images=max_images,
                 image_key=image_key,
                 mask_key=mask_key,
-                siamese=siamese, 
+                siamese=siamese,
                 color_dict={
                     0: (0, 0, 0),  # Transparent background for class 0
                     1: (0, 255, 0),  # Green with some transparency for "no-damage"
-                    2: (255, 255, 0),  # Yellow with some transparency for "minor-damage"
-                    3: (255, 126, 0),  # Orange with some transparency for "major-damage"
-                    4: (255, 0, 0)   # Red with some transparency for "destroyed"
+                    2: (
+                        255,
+                        255,
+                        0,
+                    ),  # Yellow with some transparency for "minor-damage"
+                    3: (
+                        255,
+                        126,
+                        0,
+                    ),  # Orange with some transparency for "major-damage"
+                    4: (255, 0, 0),  # Red with some transparency for "destroyed"
                 },
-                log_dir="../runs/mlflow_logs"
+                log_dir="../runs/mlflow_logs",
             )
 
             epoch_time = time.time() - start_time
@@ -711,12 +744,13 @@ def train(
 
             # Save periodic checkpoints
             if epoch % checkpoint_interval == 0:
-                save_checkpoint(epoch=epoch,
-                                model=model,
-                                optimizer=optimizer_ft,
-                                scheduler=lr_scheduler,
-                                model_dir="./checkpoints",
-                                )
+                save_checkpoint(
+                    epoch=epoch,
+                    model=model,
+                    optimizer=optimizer_ft,
+                    scheduler=lr_scheduler,
+                    model_dir="./checkpoints",
+                )
 
             # Save best model and early stopping logic
             if best_val_loss > epoch_vloss:
@@ -727,7 +761,7 @@ def train(
                 # save and log best models
                 # save_model(model, ckpt_path=model_dir, name=f"{experiment_name}_{timestamp}_best_model")
                 # log_model(model, artifact_path="best_model", signature=signature,input_example=input_example)
-          
+
             else:
                 trigger_times += 1
                 if trigger_times >= patience:
@@ -736,20 +770,21 @@ def train(
 
         total_time = time.time() - overall_start_time
         logging.info(f"Total training time: {total_time:.2f} seconds")
-      
-        ### Testing phase 
+
+        ### Testing phase
         compute_model_class_performance(
-                model=model,
-                dataloader=test_dl,
-                num_classes=num_classes,
-                device=device,
-                class_names=class_names, 
-                siamese=siamese,
-                image_key=image_key,
-                mask_key=mask_key,
-                average_mode="macro",
-                mlflow_bool=True
-            )
+            model=model,
+            dataloader=test_dl,
+            num_classes=num_classes,
+            device=device,
+            class_names=class_names,
+            siamese=siamese,
+            image_key=image_key,
+            mask_key=mask_key,
+            average_mode="macro",
+            mlflow_bool=True,
+        )
+
 
 def testing(
     model: nn.Module,
@@ -757,14 +792,14 @@ def testing(
     loss_fn: nn.Module,
     metrics: List[Callable] = [],
     image_key: str = "image",
-    mask_key: str = "mask", 
+    mask_key: str = "mask",
     verbose: bool = True,  # Adding verbose flag to control logging
     is_mixed_precision: bool = False,
     num_classes: int = 2,
     reduction: str = "weighted",
-    class_weights: List[float] = None, 
+    class_weights: List[float] = None,
     tta: bool = True,
-    siamese: bool = False
+    siamese: bool = False,
 ) -> Tuple[float, Dict[str, float]]:
     """
     Perform one epoch of validation.
@@ -778,7 +813,7 @@ def testing(
         image_key (str): Key to access input images in the batch.
         verbose (bool): Whether to log detailed information (default: True).
         training_log_interval (int): Interval at which to log metrics.
-        siamese (bool) : Siamese Network 
+        siamese (bool) : Siamese Network
 
     Returns:
         Tuple[float, Dict[str, float]]: Epoch validation loss and metric averages.
@@ -800,7 +835,7 @@ def testing(
                 batch_size = batch[image_key].size(0)
             else:
                 batch_size = batch["pre_image"].size(0)
-            
+
             # Perform a validation step
             tloss, metrics_step = validation_step(
                 model=model,
@@ -814,7 +849,7 @@ def testing(
                 reduction=reduction,
                 class_weights=class_weights,
                 tta=tta,
-                siamese=siamese
+                siamese=siamese,
             )
 
             # Accumulate validation loss
@@ -830,7 +865,5 @@ def testing(
 
     # Calculate average loss and metrics for the entire validation dataset
     epoch_tloss = running_loss / len(test_dataloader.dataset)
-    test_metrics = {
-        "test_" + name: total / len(test_dataloader.dataset) for name, total in total_metrics.items()
-    }
+    test_metrics = {"test_" + name: total / len(test_dataloader.dataset) for name, total in total_metrics.items()}
     return epoch_tloss, test_metrics

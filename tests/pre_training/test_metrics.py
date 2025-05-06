@@ -28,45 +28,53 @@ BATCH_SIZE = 4
 NUM_CLASSES = 3
 IMG_SIZE = (224, 224)
 
-@pytest.mark.parametrize("mode, num_classes", [
-    (BINARY_MODE, 1),
-    (MULTICLASS_MODE, NUM_CLASSES),
-    (MULTILABEL_MODE, NUM_CLASSES),
-])
-@pytest.mark.parametrize("metric", [
-    fbeta_score,
-    f1_score,
-    iou_score,
-    accuracy,
-    precision,
-    recall,
-    sensitivity,
-    specificity,
-    balanced_accuracy,
-    positive_predictive_value,
-    negative_predictive_value,
-    false_negative_rate,
-    false_positive_rate,
-    false_discovery_rate,
-    false_omission_rate,
-    positive_likelihood_ratio,
-    negative_likelihood_ratio,
-])
 
+@pytest.mark.parametrize(
+    "mode, num_classes",
+    [
+        (BINARY_MODE, 1),
+        (MULTICLASS_MODE, NUM_CLASSES),
+        (MULTILABEL_MODE, NUM_CLASSES),
+    ],
+)
+@pytest.mark.parametrize(
+    "metric",
+    [
+        fbeta_score,
+        f1_score,
+        iou_score,
+        accuracy,
+        precision,
+        recall,
+        sensitivity,
+        specificity,
+        balanced_accuracy,
+        positive_predictive_value,
+        negative_predictive_value,
+        false_negative_rate,
+        false_positive_rate,
+        false_discovery_rate,
+        false_omission_rate,
+        positive_likelihood_ratio,
+        negative_likelihood_ratio,
+    ],
+)
 def test_metrics_computation(metric, mode, num_classes):
     """Ensure all metrics compute valid values based on confusion matrix components."""
-    
+
     # Create dummy logits and targets based on mode
     if mode == BINARY_MODE:
-        preds = torch.randint(0, 2, size=(BATCH_SIZE, 1, *IMG_SIZE)).long() # (N, 1, H, W)        
-        targets = torch.randint(0, 2, size=(BATCH_SIZE, 1, *IMG_SIZE)).long() # (N, 1, H, W)
+        preds = torch.randint(0, 2, size=(BATCH_SIZE, 1, *IMG_SIZE)).long()  # (N, 1, H, W)
+        targets = torch.randint(0, 2, size=(BATCH_SIZE, 1, *IMG_SIZE)).long()  # (N, 1, H, W)
     elif mode == MULTICLASS_MODE:
-        logits = torch.randn(size=(BATCH_SIZE, NUM_CLASSES, *IMG_SIZE)) # (N, C, H, W)
-        preds = logits.argmax(dim=1).long() # (N, H, W)
-        targets = torch.randint(0, NUM_CLASSES, size=(BATCH_SIZE, *IMG_SIZE)).long() # (N, H, W)
+        logits = torch.randn(size=(BATCH_SIZE, NUM_CLASSES, *IMG_SIZE))  # (N, C, H, W)
+        preds = logits.argmax(dim=1).long()  # (N, H, W)
+        targets = torch.randint(0, NUM_CLASSES, size=(BATCH_SIZE, *IMG_SIZE)).long()  # (N, H, W)
     else:  # MULTILABEL_MODE
-        preds = torch.randint(0, NUM_CLASSES, size=(BATCH_SIZE, NUM_CLASSES, *IMG_SIZE)).round().long() # (N, C, H, W)
-        targets = torch.randint(0, NUM_CLASSES, size=(BATCH_SIZE, NUM_CLASSES, *IMG_SIZE)).round().long() # (N, C, H, W)
+        preds = torch.randint(0, NUM_CLASSES, size=(BATCH_SIZE, NUM_CLASSES, *IMG_SIZE)).round().long()  # (N, C, H, W)
+        targets = (
+            torch.randint(0, NUM_CLASSES, size=(BATCH_SIZE, NUM_CLASSES, *IMG_SIZE)).round().long()
+        )  # (N, C, H, W)
 
     # Compute confusion matrix components
     tp, fp, fn, tn = get_stats(preds, targets, mode=mode, num_classes=num_classes)

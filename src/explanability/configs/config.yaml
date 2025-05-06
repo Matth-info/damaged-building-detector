@@ -1,6 +1,6 @@
-# Config File for internal layer inspection 
+# Config File for internal layer inspection
 model_class : siamese_resnet_unet
-model_params : 
+model_params :
   in_channels : 3
   out_channels : 2
   mode : conc

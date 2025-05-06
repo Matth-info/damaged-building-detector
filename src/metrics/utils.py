@@ -3,22 +3,28 @@ import logging
 import torch
 import numpy as np
 import albumentations as A
-import pandas as pd 
-from tqdm import tqdm 
+import pandas as pd
+from tqdm import tqdm
 import mlflow
-from sklearn.metrics import precision_score, recall_score, f1_score, multilabel_confusion_matrix
+from sklearn.metrics import (
+    precision_score,
+    recall_score,
+    f1_score,
+    multilabel_confusion_matrix,
+)
+
 
 def compute_model_class_performance(
-        model,
-        dataloader,
-        num_classes,
-        device='cuda',
-        class_names=None, 
-        siamese=False,
-        image_key="image",
-        mask_key="mask",
-        average_mode="macro",
-        mlflow_bool=False
+    model,
+    dataloader,
+    num_classes,
+    device="cuda",
+    class_names=None,
+    siamese=False,
+    image_key="image",
+    mask_key="mask",
+    average_mode="macro",
+    mlflow_bool=False,
 ):
     """
     Computes and stores class-wise performance metrics for a segmentation model.
@@ -86,29 +92,49 @@ def compute_model_class_performance(
         dice = (2 * tp) / (2 * tp + fp + fn) if (2 * tp + fp + fn) > 0 else 0.0
         iou = tp / (tp + fp + fn) if (tp + fp + fn) > 0 else 0.0
 
-        metrics_data.append({
-            "Class": class_names[i],
-            "Precision": precision,
-            "Recall": recall,
-            "F1 Score": f1,
-            "IoU": iou,
-            "Dice": dice
-        })
-    
+        metrics_data.append(
+            {
+                "Class": class_names[i],
+                "Precision": precision,
+                "Recall": recall,
+                "F1 Score": f1,
+                "IoU": iou,
+                "Dice": dice,
+            }
+        )
+
     metrics_df = pd.DataFrame(metrics_data)
 
     # Compute overall metrics
-    precision_overall = precision_score(all_targets, all_preds, labels=unique_classes, average=average_mode, zero_division=0)
-    recall_overall = recall_score(all_targets, all_preds, labels=unique_classes, average=average_mode, zero_division=0)
-    f1_overall = f1_score(all_targets, all_preds, labels=unique_classes, average=average_mode, zero_division=0)
+    precision_overall = precision_score(
+        all_targets,
+        all_preds,
+        labels=unique_classes,
+        average=average_mode,
+        zero_division=0,
+    )
+    recall_overall = recall_score(
+        all_targets,
+        all_preds,
+        labels=unique_classes,
+        average=average_mode,
+        zero_division=0,
+    )
+    f1_overall = f1_score(
+        all_targets,
+        all_preds,
+        labels=unique_classes,
+        average=average_mode,
+        zero_division=0,
+    )
 
     overall_metrics_data = {
-            "Overall Precision": [precision_overall],
-            "Overall Recall": [recall_overall],
-            "Overall F1 Score": [f1_overall]
-        }
+        "Overall Precision": [precision_overall],
+        "Overall Recall": [recall_overall],
+        "Overall F1 Score": [f1_overall],
+    }
     overall_metrics_df = pd.DataFrame(overall_metrics_data)
-    
+
     if mlflow_bool:
         mlflow.log_table(metrics_df, artifact_file="class_wise_test_performance.json")
         mlflow.log_table(overall_metrics_df, artifact_file="overall_test_performance.json")

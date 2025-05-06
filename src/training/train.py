@@ -5,8 +5,8 @@ from typing import List, Callable, Dict, Optional, Tuple
 import yaml
 import time
 import math
-import logging 
-from tqdm import tqdm 
+import logging
+from tqdm import tqdm
 
 
 import numpy as np
@@ -31,14 +31,14 @@ from .utils import (
     custom_infer_signature,
     save_checkpoint,
     load_checkpoint,
-    initialize_optimizer_scheduler
+    initialize_optimizer_scheduler,
 )
 
-from ..augmentation.augmentations import augmentation_test_time, augmentation_test_time_siamese
+from src.augmentation import augmentation_test_time, augmentation_test_time_siamese
 from src.metrics import compute_model_class_performance, get_stats
 
-class Trainer:
 
+class Trainer:
     def __init__(
         self,
         model: nn.Module,
@@ -77,11 +77,7 @@ class Trainer:
         self.valid_dl = valid_dl
         self.test_dl = test_dl
         self.optimizer, self.scheduler = initialize_optimizer_scheduler(
-                                        self.model, 
-                                        optimizer, 
-                                        scheduler, 
-                                        optimizer_params, 
-                                        scheduler_params
+            self.model, optimizer, scheduler, optimizer_params, scheduler_params
         )
         self.loss_fn = loss_fn
         self.metrics = metrics
@@ -90,7 +86,10 @@ class Trainer:
         self.log_dir = log_dir
         self.model_dir = model_dir
         self.resume_path = resume_path
-        self.early_stopping_params = early_stopping_params or {"patience": nb_epochs, "trigger_times": 0}
+        self.early_stopping_params = early_stopping_params or {
+            "patience": nb_epochs,
+            "trigger_times": 0,
+        }
         self.image_key = image_key
         self.mask_key = mask_key
         self.verbose = verbose
@@ -118,21 +117,25 @@ class Trainer:
         self.track_system_metrics = False
 
         # initilize a local loss tracking
-        self.history = {"train_loss" : [], "val_loss" : []}
-        
+        self.history = {"train_loss": [], "val_loss": []}
+
         # Ensure directories exist
         os.makedirs(model_dir, exist_ok=True)
         os.makedirs(log_dir, exist_ok=True)
 
         # Resume from checkpoint if specified
         if self.resume_path:
-            self.start_epoch = load_checkpoint(checkpoint_path=resume_path, model=model, optimizer=self.optimizer, scheduler=self.scheduler) + 1
-    
-    def training_step(
-        self,
-        batch: dict,
-        step_number: int = None
-    ) -> Tuple[float, Dict[str, float]]:
+            self.start_epoch = (
+                load_checkpoint(
+                    checkpoint_path=resume_path,
+                    model=model,
+                    optimizer=self.optimizer,
+                    scheduler=self.scheduler,
+                )
+                + 1
+            )
+
+    def training_step(self, batch: dict, step_number: int = None) -> Tuple[float, Dict[str, float]]:
         """
         Perform a single training step on a batch of data, supporting Siamese architectures.
         """
@@ -153,7 +156,7 @@ class Trainer:
                 outputs = self.model(x1, x2) if self.siamese else self.model(x)
                 loss = self.loss_fn(outputs, y)
 
-            self.scaler.scale(loss).backward() 
+            self.scaler.scale(loss).backward()
 
             if (step_number + 1) % self.gradient_accumulation_steps == 0:
                 self.scaler.unscale_(self.optimizer)
@@ -181,15 +184,18 @@ class Trainer:
 
             for metric in self.metrics:
                 metric_name = metric.__name__
-                metrics_step[metric_name] = metric(tp, fp, fn, tn, class_weights=self.class_weights, reduction=self.reduction)
+                metrics_step[metric_name] = metric(
+                    tp,
+                    fp,
+                    fn,
+                    tn,
+                    class_weights=self.class_weights,
+                    reduction=self.reduction,
+                )
 
         return loss_value, metrics_step
-    
-    
-    def validation_step(
-        self,
-        batch: dict
-    ) -> Tuple[float, Dict[str, float]]:
+
+    def validation_step(self, batch: dict) -> Tuple[float, Dict[str, float]]:
         """
         Perform a single validation step on a batch of data.
         """
@@ -222,35 +228,39 @@ class Trainer:
 
             for metric in self.metrics:
                 metric_name = metric.__name__
-                metrics_step[metric_name] = metric(tp, fp, fn, tn, class_weights=self.class_weights, reduction=self.reduction)
+                metrics_step[metric_name] = metric(
+                    tp,
+                    fp,
+                    fn,
+                    tn,
+                    class_weights=self.class_weights,
+                    reduction=self.reduction,
+                )
 
         return vloss_value, metrics_step
 
     def _apply_tta_or_forward(self, x1, x2, x, tta, siamese):
-        """ Helper function to handle TTA and forward pass """
+        """Helper function to handle TTA and forward pass"""
         if tta:
             if siamese:
                 return augmentation_test_time_siamese(
-                    model=self.model, 
-                    images_1=x1, 
-                    images_2=x2, 
+                    model=self.model,
+                    images_1=x1,
+                    images_2=x2,
                     list_augmentations=[A.HorizontalFlip(p=1.0), A.VerticalFlip(p=1.0)],
-                    aggregation="mean", 
-                    device=self.device
+                    aggregation="mean",
+                    device=self.device,
                 )
             return augmentation_test_time(
-                model=self.model, 
-                images=x, 
+                model=self.model,
+                images=x,
                 list_augmentations=[A.HorizontalFlip(p=1.0), A.VerticalFlip(p=1.0)],
-                aggregation="mean", 
-                device=self.device
+                aggregation="mean",
+                device=self.device,
             )
         return self.model(x1, x2) if siamese else self.model(x)
 
-    def training_epoch(
-        self,
-        epoch    
-        ) -> Tuple[float, Dict[str, float]]:
+    def training_epoch(self, epoch) -> Tuple[float, Dict[str, float]]:
         """
         Perform one epoch of training.
         """
@@ -266,9 +276,7 @@ class Trainer:
 
         with tqdm(self.train_loader, desc=f"Epoch {epoch + 1}", unit="batch") as t:
             for batch in t:
-                loss_t, metrics_step = self.training_step(
-                    batch=batch
-                )
+                loss_t, metrics_step = self.training_step(batch=batch)
 
                 batch_size = batch[self.image_key].size(0)
                 running_loss += loss_t * batch_size
@@ -279,9 +287,7 @@ class Trainer:
                         total_metrics[metric_name] += metrics_step[metric_name] * batch_size
 
                 if step % self.training_log_interval == 0:
-                    step_metrics = {
-                        name: value / max(1, interval_samples) for name, value in total_metrics.items()
-                    }
+                    step_metrics = {name: value / max(1, interval_samples) for name, value in total_metrics.items()}
                     step_number = epoch * steps_per_epoch + step
                     log_metrics(metrics=step_metrics, step_number=step_number, phase="Training")
                     log_loss(
@@ -294,9 +300,7 @@ class Trainer:
                 step += 1
 
         epoch_loss = running_loss / len(self.train_loader.dataset)
-        epoch_metrics = {
-            name: value / len(self.train_loader.dataset) for name, value in total_metrics.items()
-        }
+        epoch_metrics = {name: value / len(self.train_loader.dataset) for name, value in total_metrics.items()}
 
         if self.verbose:
             logging.info(f"Epoch {epoch + 1} Training completed. Loss: {epoch_loss:.4f}")
@@ -312,10 +316,7 @@ class Trainer:
 
         return epoch_loss, epoch_metrics
 
-    def validation_epoch(
-        self,
-        epoch
-    ) -> Tuple[float, Dict[str, float]]:
+    def validation_epoch(self, epoch) -> Tuple[float, Dict[str, float]]:
         """
         Perform one epoch of validation.
         """
@@ -334,9 +335,7 @@ class Trainer:
                 for batch in t:
                     batch_size = batch[self.image_key].size(0)
 
-                    vloss, metrics_step = self.validation_step(
-                        batch=batch
-                    )
+                    vloss, metrics_step = self.validation_step(batch=batch)
 
                     running_loss += vloss * batch_size
                     interval_samples += batch_size
@@ -346,11 +345,13 @@ class Trainer:
                             total_metrics[metric_name] += metrics_step[metric_name] * batch_size
 
                     if step % self.training_log_interval == 0:
-                        step_metrics = {
-                            name: value / max(1, interval_samples) for name, value in total_metrics.items()
-                        }
+                        step_metrics = {name: value / max(1, interval_samples) for name, value in total_metrics.items()}
                         step_number = epoch * steps_per_epoch + step
-                        log_metrics(metrics=step_metrics, step_number=step_number, phase="Validation")
+                        log_metrics(
+                            metrics=step_metrics,
+                            step_number=step_number,
+                            phase="Validation",
+                        )
                         log_loss(
                             loss_value=running_loss / max(1, interval_samples),
                             step_number=step_number,
@@ -361,9 +362,7 @@ class Trainer:
                     step += 1
 
         epoch_vloss = running_loss / len(self.val_loader.dataset)
-        epoch_metrics = {
-            name: total / len(self.val_loader.dataset) for name, total in total_metrics.items()
-        }
+        epoch_metrics = {name: total / len(self.val_loader.dataset) for name, total in total_metrics.items()}
 
         if self.verbose:
             logging.info(f"Epoch {epoch + 1} Validation completed. Loss: {epoch_vloss:.4f}")
@@ -372,7 +371,7 @@ class Trainer:
         self.history["val_loss"].append(epoch_vloss)
 
         return epoch_vloss, epoch_metrics
-    
+
     def get_hyperparameters(self):
         """
         Extracts and returns key hyperparameters for run comparison.
@@ -385,7 +384,7 @@ class Trainer:
             "scheduler_params": self.scheduler.state_dict() if self.scheduler else None,
             "loss_fn": self.loss_fn.__class__.__name__,
             "nb_epochs": self.nb_epochs,
-            "batch_size": self.train_dl.batch_size if hasattr(self.train_dl, 'batch_size') else None,
+            "batch_size": self.train_dl.batch_size if hasattr(self.train_dl, "batch_size") else None,
             "early_stopping": self.early_stopping_params,
             "max_norm": self.max_norm,
             "gradient_accumulation_steps": self.gradient_accumulation_steps,
@@ -397,7 +396,6 @@ class Trainer:
             "device": self.device,
         }
 
-    
     def handle_checkpointing(self, epoch: int, val_loss: float):
         """Handles saving checkpoints and best model."""
         if val_loss < self.best_val_loss:
@@ -407,7 +405,7 @@ class Trainer:
             torch.save(self.model.state_dict(), os.path.join(self.model_dir, "best_model.pth"))
         else:
             self.trigger_times += 1
-        
+
         if epoch % self.checkpoint_interval == 0:
             save_checkpoint(epoch, self.model, self.optimizer, self.scheduler, "./checkpoints")
 
@@ -418,10 +416,10 @@ class Trainer:
         mlflow.set_tracking_uri("http://localhost:5000")
         # Set Experiment name
         mlflow.set_experiment(self.experiment_name)
-    
+
         if self.track_system_metrics:
-            mlflow.enable_system_metrics_logging() # track system performance
-            
+            mlflow.enable_system_metrics_logging()  # track system performance
+
         # Create a directory for the experiment
         timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
         run_name = f"{self.experiment_name}_{timestamp}"
@@ -430,11 +428,11 @@ class Trainer:
         overall_start_time = time.time()
 
         with mlflow.start_run() as run:
-            mlflow.set_tag('mlflow.runName', run_name)
+            mlflow.set_tag("mlflow.runName", run_name)
             mlflow.log_params(self.get_hyperparameters())
             logging.info("Hyperparameters have been logged")
-        
-            # Training / Validation phases 
+
+            # Training / Validation phases
             for epoch in range(self.start_epoch, self.nb_epochs):
                 start_time = time.time()
                 logging.info(f"Epoch {epoch + 1}/{self.nb_epochs}")
@@ -462,7 +460,7 @@ class Trainer:
                 step_number = (epoch + 1) * steps_per_epoch
                 log_metrics(metrics=train_metrics, step_number=step_number, phase="Training")
                 log_metrics(metrics=val_metrics, step_number=step_number, phase="Validation")
-                
+
                 # Log sample images after validation epoch
                 log_images_to_mlflow(
                     model=self.model,
@@ -472,15 +470,23 @@ class Trainer:
                     max_images=4,
                     image_key=self.image_key,
                     mask_key=self.mask_key,
-                    siamese=self.siamese, 
+                    siamese=self.siamese,
                     color_dict={
                         0: (0, 0, 0),  # Transparent background for class 0
                         1: (0, 255, 0),  # Green with some transparency for "no-damage"
-                        2: (255, 255, 0),  # Yellow with some transparency for "minor-damage"
-                        3: (255, 126, 0),  # Orange with some transparency for "major-damage"
-                        4: (255, 0, 0)   # Red with some transparency for "destroyed"
+                        2: (
+                            255,
+                            255,
+                            0,
+                        ),  # Yellow with some transparency for "minor-damage"
+                        3: (
+                            255,
+                            126,
+                            0,
+                        ),  # Orange with some transparency for "major-damage"
+                        4: (255, 0, 0),  # Red with some transparency for "destroyed"
                     },
-                    log_dir="../runs/mlflow_logs"
+                    log_dir="../runs/mlflow_logs",
                 )
 
                 # Logging epoch duration
@@ -505,25 +511,25 @@ class Trainer:
             epoch_tloss, test_metrics = self.testing()
             log_metrics(test_metrics, step_number=None, phase="Testing")
 
-            ### Testing phase 
+            ### Testing phase
             compute_model_class_performance(
-                    model=self.model,
-                    dataloader=self.test_dl,
-                    num_classes=self.num_classes,
-                    device=self.device,
-                    class_names=self.class_names, 
-                    siamese=self.siamese,
-                    image_key=self.image_key,
-                    mask_key=self.mask_key,
-                    average_mode="macro",
-                    mlflow_bool=True
+                model=self.model,
+                dataloader=self.test_dl,
+                num_classes=self.num_classes,
+                device=self.device,
+                class_names=self.class_names,
+                siamese=self.siamese,
+                image_key=self.image_key,
+                mask_key=self.mask_key,
+                average_mode="macro",
+                mlflow_bool=True,
             )
 
     @classmethod
     def testing(
         self,
     ) -> Tuple[float, Dict[str, float]]:
-        
+
         logging.info("Testing Phase")
 
         running_loss = 0.0
@@ -534,7 +540,7 @@ class Trainer:
         with tqdm(self.test_dl, desc="Testing", unit="batch") as t:
             for batch in t:
                 batch_size = batch[self.image_key].size(0) if self.siamese else batch[self.image_key].size(0)
-                
+
                 # Perform a validation step
                 tloss, metrics_step = self.validation_step(batch=batch)
 
@@ -551,8 +557,6 @@ class Trainer:
 
         # Calculate average loss and metrics for the entire test dataset
         epoch_tloss = running_loss / len(self.test_dl.dataset)
-        test_metrics = {
-            f"test_{name}": total / len(self.test_dl.dataset) for name, total in total_metrics.items()
-        }
+        test_metrics = {f"test_{name}": total / len(self.test_dl.dataset) for name, total in total_metrics.items()}
 
         return epoch_tloss, test_metrics

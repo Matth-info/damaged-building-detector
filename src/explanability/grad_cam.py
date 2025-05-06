@@ -74,9 +74,7 @@ class GradCAM:
         heatmap = (heatmap - heatmap.min()) / (heatmap.max() - heatmap.min() + 1e-8)
 
         # Resize the heatmap to match input image size
-        heatmap = np.resize(
-            heatmap, (input_tensor.size(2), input_tensor.size(3))
-        )  # Resize to match input image
+        heatmap = np.resize(heatmap, (input_tensor.size(2), input_tensor.size(3)))  # Resize to match input image
         return heatmap
 
     def __call__(self, input_tensor, target_class=None):
@@ -122,9 +120,7 @@ def display_gradcam(input_tensor, heatmap):
     heatmap_colored = colormap(heatmap)[:, :, :3]  # Use the jet colormap
 
     # Superimpose the heatmap on the original image
-    superimposed_img = (
-        heatmap_colored * 0.4 + img
-    )  # Adjust transparency by multiplying by 0.4
+    superimposed_img = heatmap_colored * 0.4 + img  # Adjust transparency by multiplying by 0.4
 
     # Plot the original image and the superimposed heatmap
     plt.figure(figsize=(10, 10))

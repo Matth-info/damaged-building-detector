@@ -19,9 +19,7 @@ class ConvBlock(torch.nn.Module):
         norm=None,
     ):
         super(ConvBlock, self).__init__()
-        self.conv = torch.nn.Conv2d(
-            input_size, output_size, kernel_size, stride, padding, bias=bias
-        )
+        self.conv = torch.nn.Conv2d(input_size, output_size, kernel_size, stride, padding, bias=bias)
 
         self.norm = norm
         if self.norm == "batch":
@@ -66,9 +64,7 @@ class DeconvBlock(torch.nn.Module):
         norm=None,
     ):
         super(DeconvBlock, self).__init__()
-        self.deconv = torch.nn.ConvTranspose2d(
-            input_size, output_size, kernel_size, stride, padding, bias=bias
-        )
+        self.deconv = torch.nn.ConvTranspose2d(input_size, output_size, kernel_size, stride, padding, bias=bias)
 
         self.norm = norm
         if self.norm == "batch":
@@ -116,9 +112,7 @@ class ConvLayer(nn.Module):
 class UpsampleConvLayer(torch.nn.Module):
     def __init__(self, in_channels, out_channels, kernel_size, stride):
         super(UpsampleConvLayer, self).__init__()
-        self.conv2d = nn.ConvTranspose2d(
-            in_channels, out_channels, kernel_size, stride=stride, padding=1
-        )
+        self.conv2d = nn.ConvTranspose2d(in_channels, out_channels, kernel_size, stride=stride, padding=1)
 
     def forward(self, x):
         out = self.conv2d(x)

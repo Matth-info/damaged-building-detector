@@ -22,5 +22,5 @@ __all__ = [
     "SoftCrossEntropyLoss",
     "TverskyLoss",
     "MCCLoss",
-    "Ensemble"
+    "Ensemble",
 ]

@@ -43,5 +43,5 @@ __all__ = [
     "negative_likelihood_ratio",
     "compute_model_class_performance",
     "ConfusionMatrix",
-    "IoU"
+    "IoU",
 ]

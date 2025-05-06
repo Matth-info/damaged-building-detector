@@ -5,8 +5,8 @@ import torch
 from torch import Tensor
 from torch.nn import Identity, Module, ModuleList
 
-from .layers import (MixingBlock, MixingMaskAttentionBlock, PixelwiseLinear,
-                     UpMask)
+from .layers import MixingBlock, MixingMaskAttentionBlock, PixelwiseLinear, UpMask
+
 
 class TinyCD(Module):
     def __init__(
@@ -20,9 +20,7 @@ class TinyCD(Module):
         super().__init__()
 
         # Load the pretrained backbone according to parameters:
-        self._backbone = _get_backbone(
-            bkbn_name, pretrained, output_layer_bkbn, freeze_backbone
-        )
+        self._backbone = _get_backbone(bkbn_name, pretrained, output_layer_bkbn, freeze_backbone)
 
         # Initialize mixing blocks:
         self._first_mix = MixingMaskAttentionBlock(6, 3, [3, 10, 5], [10, 5, 1])
@@ -50,7 +48,7 @@ class TinyCD(Module):
         features = self._encode(x1, x2)
         latents = self._decode(features)
         return self._classify(latents)
-    
+
     @torch.no_grad()
     def predict(self, x1, x2):
         self.forward(x1, x2)
@@ -69,13 +67,10 @@ class TinyCD(Module):
             upping = self._up[i](upping, features[j])
         return upping
 
-def _get_backbone(
-    bkbn_name, pretrained, output_layer_bkbn, freeze_backbone
-) -> ModuleList:
+
+def _get_backbone(bkbn_name, pretrained, output_layer_bkbn, freeze_backbone) -> ModuleList:
     # The whole model:
-    entire_model = getattr(torchvision.models, bkbn_name)(
-        weights="DEFAULT" if pretrained else None
-    ).features
+    entire_model = getattr(torchvision.models, bkbn_name)(weights="DEFAULT" if pretrained else None).features
 
     # Slicing it:
     derived_model = ModuleList([])

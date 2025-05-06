@@ -3,12 +3,8 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torch.utils.checkpoint
 
-from .help_funcs import (
-    DoubleConv,
-    Down,
-    Up,
-    OutConv
-)
+from .help_funcs import DoubleConv, Down, Up, OutConv
+
 
 class UNet(nn.Module):
     def __init__(self, n_channels, n_classes, bilinear=False):
@@ -55,7 +51,6 @@ class UNet(nn.Module):
         self.up4 = torch.utils.checkpoint.checkpoint(self.up4)
         self.outc = torch.utils.checkpoint.checkpoint(self.outc)
 
-    
     @torch.no_grad()
     def predict(self, x):
         """Inference method"""

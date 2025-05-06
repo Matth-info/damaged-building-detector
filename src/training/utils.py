@@ -22,66 +22,64 @@ import numpy as np
 import mlflow
 from mlflow.models.signature import infer_signature
 
+from src.utils.visualization import apply_color_map
+
 __all__ = [
-    "apply_color_map", 
-    "define_weighted_random_sampler", 
-    "define_class_weights", 
+    "define_weighted_random_sampler",
+    "define_class_weights",
     "custom_infer_signature",
     "save_checkpoint",
     "load_checkpoint",
-    "initialize_optimizer_scheduler"
+    "initialize_optimizer_scheduler",
 ]
 
-def initialize_optimizer_scheduler(model, 
-                            optimizer=None, 
-                            scheduler=None, 
-                            optimizer_params=None, 
-                            scheduler_params=None
-        ):
-        """
-        Initializes the optimizer and learning rate scheduler.
 
-        Args:
-            model (torch.nn.Module): The model whose parameters require optimization.
-            optimizer (type or torch.optim.Optimizer, optional): Optimizer class (e.g., torch.optim.AdamW) or an initialized optimizer. 
-                Defaults to None, which uses AdamW with a default learning rate.
-            scheduler (type or torch.optim.lr_scheduler._LRScheduler, optional): Scheduler class or an initialized scheduler.
-                Defaults to None, which uses StepLR with a step size of 10 and gamma of 0.1.
-            optimizer_params (dict, optional): Parameters for the optimizer. Ignored if `optimizer` is already initialized. 
-                Defaults to None.
-            scheduler_params (dict, optional): Parameters for the scheduler. Ignored if `scheduler` is already initialized.
-                Defaults to None.
+def initialize_optimizer_scheduler(model, optimizer=None, scheduler=None, optimizer_params=None, scheduler_params=None):
+    """
+    Initializes the optimizer and learning rate scheduler.
 
-        Returns:
-            tuple: A tuple containing the initialized optimizer and scheduler.
-        """
-        # Default optimizer parameters
-        optimizer_params = optimizer_params or {"lr": 1e-4}
-        scheduler_params = scheduler_params or {"step_size": 10, "gamma": 0.1}
+    Args:
+        model (torch.nn.Module): The model whose parameters require optimization.
+        optimizer (type or torch.optim.Optimizer, optional): Optimizer class (e.g., torch.optim.AdamW) or an initialized optimizer.
+            Defaults to None, which uses AdamW with a default learning rate.
+        scheduler (type or torch.optim.lr_scheduler._LRScheduler, optional): Scheduler class or an initialized scheduler.
+            Defaults to None, which uses StepLR with a step size of 10 and gamma of 0.1.
+        optimizer_params (dict, optional): Parameters for the optimizer. Ignored if `optimizer` is already initialized.
+            Defaults to None.
+        scheduler_params (dict, optional): Parameters for the scheduler. Ignored if `scheduler` is already initialized.
+            Defaults to None.
 
-        # Initialize the optimizer
-        if optimizer is None:
-            optimizer_ft = torch.optim.AdamW(
-                params=filter(lambda p: p.requires_grad, model.parameters()),
-                **optimizer_params,
-            )
-        elif isinstance(optimizer, type):  # If optimizer is a class, initialize it
-            optimizer_ft = optimizer(
-                params=filter(lambda p: p.requires_grad, model.parameters()),
-                **optimizer_params,
-            )
-        else:  # If optimizer is already initialized
-            optimizer_ft = optimizer
+    Returns:
+        tuple: A tuple containing the initialized optimizer and scheduler.
+    """
+    # Default optimizer parameters
+    optimizer_params = optimizer_params or {"lr": 1e-4}
+    scheduler_params = scheduler_params or {"step_size": 10, "gamma": 0.1}
 
-        # Initialize the scheduler
-        if scheduler is None:
-            lr_scheduler = torch.optim.lr_scheduler.StepLR(optimizer_ft, **scheduler_params)
-        elif isinstance(scheduler, type):  # If scheduler is a class, initialize it
-            lr_scheduler = scheduler(optimizer=optimizer_ft, **scheduler_params)
-        else:  # If scheduler is already initialized
-            lr_scheduler = scheduler
+    # Initialize the optimizer
+    if optimizer is None:
+        optimizer_ft = torch.optim.AdamW(
+            params=filter(lambda p: p.requires_grad, model.parameters()),
+            **optimizer_params,
+        )
+    elif isinstance(optimizer, type):  # If optimizer is a class, initialize it
+        optimizer_ft = optimizer(
+            params=filter(lambda p: p.requires_grad, model.parameters()),
+            **optimizer_params,
+        )
+    else:  # If optimizer is already initialized
+        optimizer_ft = optimizer
 
-        return optimizer_ft, lr_scheduler
+    # Initialize the scheduler
+    if scheduler is None:
+        lr_scheduler = torch.optim.lr_scheduler.StepLR(optimizer_ft, **scheduler_params)
+    elif isinstance(scheduler, type):  # If scheduler is a class, initialize it
+        lr_scheduler = scheduler(optimizer=optimizer_ft, **scheduler_params)
+    else:  # If scheduler is already initialized
+        lr_scheduler = scheduler
+
+    return optimizer_ft, lr_scheduler
+
 
 def save_checkpoint(epoch, model, optimizer, scheduler, model_dir):
     """
@@ -94,7 +92,7 @@ def save_checkpoint(epoch, model, optimizer, scheduler, model_dir):
         scheduler (torch.optim.lr_scheduler._LRScheduler): The learning rate scheduler.
         model_dir (str): Directory to save the checkpoint.
     """
-    
+
     # Ensure checkpoint directory exists
     os.makedirs(model_dir, exist_ok=True)
     # Save periodic checkpoints
@@ -139,9 +137,8 @@ def load_checkpoint(checkpoint_path, model, optimizer=None, scheduler=None):
 
     return checkpoint["epoch"]
 
-def log_metrics(
-    metrics: dict, step_number: int, phase: str = "Validation"
-):
+
+def log_metrics(metrics: dict, step_number: int, phase: str = "Validation"):
     """
     Logs each metric in the dictionary to TensorBoard.
 
@@ -150,11 +147,13 @@ def log_metrics(
     - step_number: The current step number.
     - phase: 'Validation' or 'Training', used to distinguish metrics in TensorBoard.
     """
-    mlflow.log_metrics({f"{phase}_{metric_name}": value for metric_name, value in metrics.items()}, step=step_number)
+    mlflow.log_metrics(
+        {f"{phase}_{metric_name}": value for metric_name, value in metrics.items()},
+        step=step_number,
+    )
 
-def log_loss(loss_value: float, 
-    step_number: int, phase: str = "Validation"
-):
+
+def log_loss(loss_value: float, step_number: int, phase: str = "Validation"):
     """
     Logs loss value to TensorBoard.
 
@@ -164,6 +163,7 @@ def log_loss(loss_value: float,
     - phase: 'Validation' or 'Training', used to distinguish metrics in TensorBoard.
     """
     mlflow.log_metric(f"{phase}_loss", f"{loss_value:2f}", step=step_number)
+
 
 """
     def log_graph(model: torch.nn.Module, siamese: bool = False, device: str = "cuda", input_shape: tuple = (1, 3, 512, 512)):
@@ -177,7 +177,7 @@ def log_loss(loss_value: float,
         device (str): The device (cuda or cpu) where the model and tensors should be moved.
         input_shape (tuple): The shape of the input tensor (default: (1, 3, 512, 512)).
     model.to(device)  # Move model to the correct device
-    
+
     # For Siamese models, we create two input tensors
     if siamese:
         x1 = torch.randn(*input_shape).to(device)
@@ -187,15 +187,24 @@ def log_loss(loss_value: float,
         x1 = torch.randn(*input_shape).to(device)
         writer.add_graph(model, x1)"""
 
+
 def log_model(model, artifact_path="best_model", signature=None, input_example=None):
     mlflow.pytorch.log_model(
-            model, 
-            artifact_path=artifact_path,
-            signature=signature,
-            input_example=input_example
-        )
-        
-def custom_infer_signature(model, data_loader, siamese: bool = False, image_key: str = "image", mask_key: str = "mask", device: str = "cuda"):
+        model,
+        artifact_path=artifact_path,
+        signature=signature,
+        input_example=input_example,
+    )
+
+
+def custom_infer_signature(
+    model,
+    data_loader,
+    siamese: bool = False,
+    image_key: str = "image",
+    mask_key: str = "mask",
+    device: str = "cuda",
+):
     """
     Infers the MLflow signature for a given model using a single batch of data from the dataloader.
 
@@ -254,31 +263,6 @@ def custom_infer_signature(model, data_loader, siamese: bool = False, image_key:
     logging.info("Model Signature has been defined")
     return signature, example_inputs
 
-# Function to apply colors to masks (labels and predictions)
-def apply_color_map(mask, color_dict):
-    """
-    Applies a color map (color_dict) to a mask tensor.
-    
-    Args:
-        mask (tensor): Mask tensor (predictions or labels). shape (N, H, W)
-        color_dict (dict): A dictionary mapping class labels to RGB colors.
-    
-    Returns:
-        color_mask (tensor): The colored mask tensor.
-    """
-    batch_size, height, width = mask.shape
-    color_mask = torch.zeros((batch_size, 3, height, width), dtype=torch.float32)
-
-    # Apply the color mapping for each class label in the mask
-
-    for label, color in color_dict.items():
-        binary_mask = (mask == label).float()
-        color = color_dict[label] 
-        # Apply the color to the binary mask
-        color_mask[:, 0, :, :] += binary_mask * (color[0] / 255.0)  # Red channel
-        color_mask[:, 1, :, :] += binary_mask * (color[1] / 255.0)  # Green channel
-        color_mask[:, 2, :, :] += binary_mask * (color[2] / 255.0)  # Blue channel
-    return color_mask
 
 """def log_images_to_tensorboard(
     model: torch.nn.Module,
@@ -289,7 +273,7 @@ def apply_color_map(mask, color_dict):
     max_images: int = 4,
     image_key: str = "image",
     mask_key: str = "mask",
-    siamese: bool = False, 
+    siamese: bool = False,
     color_dict = None
 ):
     Logs images, labels, and model predictions to TensorBoard.
@@ -329,14 +313,14 @@ def apply_color_map(mask, color_dict):
     batch_size = labels.size(0)
     num_images = min(max_images, batch_size)  # Ensure max_images doesn't exceed batch size
     indices = random.sample(range(batch_size), num_images)  # Randomly select indices
-    
+
     # Move data back to CPU for visualization and limit the number of images
     if siamese:
         inputs_1 = x1.cpu().float()[indices]
         inputs_2 = x2.cpu().float()[indices]
     else:
         inputs = x.cpu().float()[indices]
-    
+
     labels = labels.cpu().float()[indices]
     predictions = predictions.cpu().float()[indices]
 
@@ -373,6 +357,7 @@ def apply_color_map(mask, color_dict):
     model.train()  # Return to training mode if necessary
 """
 
+
 def log_images_to_mlflow(
     model: torch.nn.Module,
     data_loader: DataLoader,
@@ -381,9 +366,9 @@ def log_images_to_mlflow(
     max_images: int = 4,
     image_key: str = "image",
     mask_key: str = "mask",
-    siamese: bool = False, 
+    siamese: bool = False,
     color_dict=None,
-    log_dir: str = "mlflow_logs"
+    log_dir: str = "mlflow_logs",
 ):
     """
     Logs images, labels, and model predictions to MLflow.
@@ -470,14 +455,17 @@ def log_images_to_mlflow(
 
     model.train()  # Return to training mode if necessary
 
+
 def save_model(model, ckpt_path="./models", name="model"):
     path = os.path.join(ckpt_path, "{}.pth".format(name))
     torch.save(model.state_dict(), path, _use_new_zipfile_serialization=False)
+
 
 def load_model(model, ckpt_path):
     state = torch.load(ckpt_path)
     model.load_state_dict(state)
     return model
+
 
 def display_metrics(metrics, phase):
     """
@@ -499,6 +487,7 @@ def display_metrics(metrics, phase):
 
     print(table)
 
+
 ############ Utils for dealing with class imbalanced datasets ########################
 def define_weighted_random_sampler(dataset, mask_key="post_mask", subset_size=None, seed: int = None):
     """
@@ -508,12 +497,13 @@ def define_weighted_random_sampler(dataset, mask_key="post_mask", subset_size=No
         dataset: A segmentation dataset where each sample includes an image and its corresponding mask.
         mask_key: Key to access the mask in the dataset sample (default: "post_mask").
         subset_size: Number of random samples to use for estimating class weights. If None, uses the full dataset.
-        seed : seed number 
+        seed : seed number
     Returns:
         sampler: A WeightedRandomSampler for balanced class sampling.
-        class_weights: Inversely propotional class weights for imbalance dataset. 
+        class_weights: Inversely propotional class weights for imbalance dataset.
     """
-    if seed is not None : random.seed(seed) 
+    if seed is not None:
+        random.seed(seed)
     # Determine subset of dataset to analyze (optional)
     if subset_size is not None:
         sampled_indices = random.sample(range(len(dataset)), min(len(dataset), subset_size))
@@ -528,7 +518,7 @@ def define_weighted_random_sampler(dataset, mask_key="post_mask", subset_size=No
         mask = dataset[i][mask_key]
         mask_flat = mask.flatten().numpy()  # Flatten the mask to count pixel-level classes
         class_counts.update(mask_flat)
-    
+
     # Convert class counts to weights (inverse frequency)
     total_pixels = sum(class_counts.values())
     class_weights = {cls: total_pixels / (count + 1e-6) for cls, count in class_counts.items()}
@@ -547,7 +537,8 @@ def define_weighted_random_sampler(dataset, mask_key="post_mask", subset_size=No
     sampler = WeightedRandomSampler(weights=sample_weights, num_samples=len(dataset), replacement=True)
 
     return sampler, class_weights
-        
+
+
 def define_class_weights(dataset, mask_key="post_mask", subset_size=None, seed: int = None):
     """
     Define classweights for a segmentation dataset to address class imbalance.
@@ -556,12 +547,13 @@ def define_class_weights(dataset, mask_key="post_mask", subset_size=None, seed: 
         dataset: A segmentation dataset where each sample includes an image and its corresponding mask.
         mask_key: Key to access the mask in the dataset sample (default: "post_mask").
         subset_size: Number of random samples to use for estimating class weights. If None, uses the full dataset.
-        seed : seed number 
+        seed : seed number
     Returns:
         sampler: A WeightedRandomSampler for balanced class sampling.
-        class_weights: Inversely propotional class weights for imbalance dataset. 
+        class_weights: Inversely propotional class weights for imbalance dataset.
     """
-    if seed is not None : random.seed(seed) 
+    if seed is not None:
+        random.seed(seed)
     # Determine subset of dataset to analyze (optional)
     if subset_size is not None:
         sampled_indices = random.sample(range(len(dataset)), min(len(dataset), subset_size))
@@ -576,11 +568,12 @@ def define_class_weights(dataset, mask_key="post_mask", subset_size=None, seed: 
         mask = dataset[i][mask_key]
         mask_flat = mask.flatten().numpy()  # Flatten the mask to count pixel-level classes
         class_counts.update(mask_flat)
-    
+
     # Convert class counts to weights (inverse frequency)
     total_pixels = sum(class_counts.values())
     class_weights = {cls: total_pixels / (count + 1e-6) for cls, count in class_counts.items()}
     return class_weights
+
 
 ############ Utils Functions for Fine Tuning Mask-R-CNN ##############################
 
@@ -591,13 +584,15 @@ import torch.distributed as dist
 
 __all__ = ["reduce_dict"]
 
+
 def is_dist_avail_and_initialized():
     if not dist.is_available():
         return False
     if not dist.is_initialized():
         return False
     return True
-    
+
+
 def get_world_size():
     if not is_dist_avail_and_initialized():
         return 1
