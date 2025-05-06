@@ -1,30 +1,27 @@
-from pathlib import Path
-from typing import List, Dict, Optional, Tuple
 import json
+from pathlib import Path
+from typing import Dict, List, Optional, Tuple
 
-from PIL import Image, ImageDraw
+import albumentations as A
 import cv2
+import matplotlib.pyplot as plt
+import numpy as np
 
 # torch imports
 import torch
+from PIL import Image, ImageDraw
+from shapely import wkt
+from torchvision import transforms, tv_tensors
 from torchvision.ops.boxes import masks_to_boxes
-from torchvision import tv_tensors
 from torchvision.transforms.functional import to_pil_image
 from torchvision.transforms.v2 import functional as F
-from torchvision.utils import draw_segmentation_masks, draw_bounding_boxes
-from torchvision import transforms
-
-import numpy as np
-import matplotlib.pyplot as plt
-import albumentations as A
-from shapely import wkt
+from torchvision.utils import draw_bounding_boxes, draw_segmentation_masks
 
 from .base import (
     Change_Detection_Dataset,
-    Segmentation_Dataset,
     Instance_Segmentation_Dataset,
+    Segmentation_Dataset,
 )
-
 
 # Color codes for polygons
 damage_dict = {
@@ -35,9 +32,9 @@ damage_dict = {
     "un-classified": (255, 255, 255, 50),
 }
 
-#### Segmentation Dataset ####
-class xDB_Damaged_Building(Segmentation_Dataset):
 
+# Segmentation Dataset #
+class xDB_Damaged_Building(Segmentation_Dataset):
     MEAN = [0.349, 0.354, 0.268]
     STD = [0.114, 0.102, 0.094]
 
@@ -52,7 +49,6 @@ class xDB_Damaged_Building(Segmentation_Dataset):
         test_ratio=0.1,
         seed: int = 42,
     ):
-
         assert type in [
             "train",
             "val",
@@ -130,7 +126,9 @@ class xDB_Damaged_Building(Segmentation_Dataset):
             mask = transformed["mask"].long()  # mask is converted into torch.int64
         else:
             # Convert image and mask to tensors directly if no transform
-            image = torch.from_numpy(np.array(image)).permute(2, 0, 1).float() / 255.0  # Normalize to [0, 1]
+            image = (
+                torch.from_numpy(np.array(image)).permute(2, 0, 1).float() / 255.0
+            )  # Normalize to [0, 1]
             mask = torch.from_numpy(mask).long()  # mask is converted into torch.int64
 
         return {"image": image, "mask": mask}
@@ -204,7 +202,9 @@ class xDB_Damaged_Building(Segmentation_Dataset):
             polygons.append((damage, wkt.loads(swkt)))
 
         # Initialize the mask
-        mask = Image.new("L", (image_height, image_width), 0)  # 'L' mode for grayscale, initialized to 0
+        mask = Image.new(
+            "L", (image_height, image_width), 0
+        )  # 'L' mode for grayscale, initialized to 0
         draw = ImageDraw.Draw(mask)
 
         # Define damage classes (used in "damage" mode)
@@ -331,19 +331,19 @@ class xDB_Damaged_Building(Segmentation_Dataset):
         fig.set_size_inches(30, 30)
         TITLE_FONT_SIZE = 24
         ax[0][0].imshow(img_A)
-        ax[0][0].set_title("Pre Diaster Image (Not Annotated)", fontsize=TITLE_FONT_SIZE)
+        ax[0][0].set_title("Pre Disaster Image (Not Annotated)", fontsize=TITLE_FONT_SIZE)
         ax[0][1].imshow(img_B)
-        ax[0][1].set_title("Post Diaster Image (Not Annotated)", fontsize=TITLE_FONT_SIZE)
+        ax[0][1].set_title("Post Disaster Image (Not Annotated)", fontsize=TITLE_FONT_SIZE)
         ax[1][0].imshow(img_C)
-        ax[1][0].set_title("Pre Diaster Image (Annotated)", fontsize=TITLE_FONT_SIZE)
+        ax[1][0].set_title("Pre Disaster Image (Annotated)", fontsize=TITLE_FONT_SIZE)
         ax[1][1].imshow(img_D)
-        ax[1][1].set_title("Post Diaster Image (Annotated)", fontsize=TITLE_FONT_SIZE)
+        ax[1][1].set_title("Post Disaster Image (Annotated)", fontsize=TITLE_FONT_SIZE)
         if save:
             plt.savefig("split_image.png", dpi=100)
         plt.show()
 
 
-###### Change Detection Datasets ######
+# Change Detection Datasets #
 class xDB_Siamese_Dataset(Change_Detection_Dataset):
     def __init__(
         self,
@@ -372,7 +372,7 @@ class xDB_Siamese_Dataset(Change_Detection_Dataset):
             "change_detection",
         ], "Mode must be 'building', 'full_damage', 'simple_damage' or 'change_detection'"
         self.mode = mode
-        self.list_labels = [str(x) for x in self.label_dir.rglob(pattern=f"*post_*.json")]
+        self.list_labels = [str(x) for x in self.label_dir.rglob(pattern="*post_*.json")]
         self.transform = transform
 
         self.val_ratio = val_ratio
@@ -562,7 +562,9 @@ class xDB_Siamese_Dataset(Change_Detection_Dataset):
             4: (1, 0, 0),  # Red with some transparency for "destroyed"
         }
 
-        cmap = plt.cm.colors.ListedColormap([damage_colors[val] for val in sorted(damage_colors.keys())])
+        cmap = plt.cm.colors.ListedColormap(
+            [damage_colors[val] for val in sorted(damage_colors.keys())]
+        )
 
         for i, idx in enumerate(list_ids):
             if idx < 0 or idx >= len(self):  # Validate index
@@ -724,7 +726,7 @@ class xDB_Instance_Building(Instance_Segmentation_Dataset):
         if len(obj_ids) > 0:
             # split the color-encoded mask into a set
             # of binary masks
-            masks = torch.from_numpy((mask == obj_ids[:, None, None])).to(dtype=torch.uint8)
+            masks = torch.from_numpy(mask == obj_ids[:, None, None]).to(dtype=torch.uint8)
             # Get bounding boxes for each mask
             boxes = masks_to_boxes(masks)
             # Create labels (1 for all instances)
@@ -746,7 +748,6 @@ class xDB_Instance_Building(Instance_Segmentation_Dataset):
                 "image_id": idx,
             }
         elif self.task == "semantic":
-
             target = {
                 "boxes": tv_tensors.BoundingBoxes(boxes, format="XYXY", canvas_size=(H, W)),
                 "masks": tv_tensors.Mask(binary_mask),
@@ -766,9 +767,7 @@ class xDB_Instance_Building(Instance_Segmentation_Dataset):
         return len(self.list_labels)
 
     def _filter_invalid_boxes(self, target, width=512, height=512):
-
         if self.task == "instance":
-
             boxes = target["boxes"]
             masks = target["masks"]
             labels = target["labels"]
@@ -788,8 +787,12 @@ class xDB_Instance_Building(Instance_Segmentation_Dataset):
                 target["masks"] = torch.zeros((0, height, width), dtype=torch.uint8)
             else:
                 target["boxes"] = torch.tensor(valid_boxes, dtype=torch.float32)
-                target["masks"] = torch.tensor(valid_masks, dtype=torch.float32)  # Ensure masks have appropriate dtype
-                target["labels"] = torch.tensor(valid_labels, dtype=torch.long)  # Labels are typically integers
+                target["masks"] = torch.tensor(
+                    valid_masks, dtype=torch.float32
+                )  # Ensure masks have appropriate dtype
+                target["labels"] = torch.tensor(
+                    valid_labels, dtype=torch.long
+                )  # Labels are typically integers
 
         return target
 
@@ -858,7 +861,9 @@ class xDB_Instance_Building(Instance_Segmentation_Dataset):
             polygons.append((damage, wkt.loads(swkt)))
 
         # Initialize the mask
-        mask = Image.new("L", (image_height, image_width), 0)  # 'L' mode for grayscale, initialized to 0
+        mask = Image.new(
+            "L", (image_height, image_width), 0
+        )  # 'L' mode for grayscale, initialized to 0
         draw = ImageDraw.Draw(mask)
 
         # Define damage classes (used in "damage" mode)

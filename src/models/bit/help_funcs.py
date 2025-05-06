@@ -95,7 +95,6 @@ class Cross_Attention(nn.Module):
         self.to_out = nn.Sequential(nn.Linear(inner_dim, dim), nn.Dropout(dropout))
 
     def forward(self, x, m, mask=None):
-
         b, n, _, h = *x.shape, self.heads
         q = self.to_q(x)
         k = self.to_k(m)

@@ -1,17 +1,17 @@
 import logging
 
-import torch
-import numpy as np
 import albumentations as A
-import pandas as pd
-from tqdm import tqdm
 import mlflow
+import numpy as np
+import pandas as pd
+import torch
 from sklearn.metrics import (
-    precision_score,
-    recall_score,
     f1_score,
     multilabel_confusion_matrix,
+    precision_score,
+    recall_score,
 )
+from tqdm import tqdm
 
 
 def compute_model_class_performance(
@@ -51,7 +51,7 @@ def compute_model_class_performance(
     total_pixels = 0
 
     with torch.no_grad():
-        with tqdm(dataloader, desc=f"Testing", unit="batch") as t:
+        with tqdm(dataloader, desc="Testing", unit="batch") as t:
             for batch in t:
                 if siamese:
                     pre_image = batch["pre_image"].to(device)

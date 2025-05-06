@@ -1,0 +1,35 @@
+__version__: 2.0.5
+transform:
+  __class_fullname__: Compose
+  additional_targets:
+    post_image: image
+    post_mask: mask
+  bbox_params: null
+  is_check_shapes: true
+  keypoint_params: null
+  p: 1.0
+  transforms:
+    - __class_fullname__: CenterCrop
+      border_mode: 0
+      fill: 0.0
+      fill_mask: 0.0
+      height: 256
+      p: 1.0
+      pad_if_needed: false
+      pad_position: center
+      width: 256
+    - __class_fullname__: Normalize
+      max_pixel_value: 1.0
+      mean:
+        - 0.387
+        - 0.382
+        - 0.325
+      normalization: standard
+      p: 1.0
+      std:
+        - 0.158
+        - 0.15
+        - 0.138
+    - __class_fullname__: ToTensorV2
+      p: 1.0
+      transpose_mask: false

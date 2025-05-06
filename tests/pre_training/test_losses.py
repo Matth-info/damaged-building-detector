@@ -1,19 +1,20 @@
 # pytest ./test_losses.py -v
 import pytest
 import torch
+
 from src.losses import (
-    JaccardLoss,
-    DiceLoss,
-    FocalLoss,
-    LovaszLoss,
-    SoftBCEWithLogitsLoss,
-    SoftCrossEntropyLoss,
-    TverskyLoss,
-    MCCLoss,
-    Ensemble,
     BINARY_MODE,
     MULTICLASS_MODE,
     MULTILABEL_MODE,
+    DiceLoss,
+    Ensemble,
+    FocalLoss,
+    JaccardLoss,
+    LovaszLoss,
+    MCCLoss,
+    SoftBCEWithLogitsLoss,
+    SoftCrossEntropyLoss,
+    TverskyLoss,
 )
 
 # Sample batch size, classes, and image size
@@ -49,11 +50,17 @@ def test_loss_computation(loss_fn, mode):
         logits = torch.randn(size=(BATCH_SIZE, 1, *IMG_SIZE), requires_grad=True)  # (N, 1, H, W)
         targets = torch.randint(0, 2, size=(BATCH_SIZE, 1, *IMG_SIZE)).float()  # (N, 1, H, W)
     elif mode == MULTICLASS_MODE:
-        logits = torch.randn(size=(BATCH_SIZE, NUM_CLASSES, *IMG_SIZE), requires_grad=True)  # (N, C, H, W)
+        logits = torch.randn(
+            size=(BATCH_SIZE, NUM_CLASSES, *IMG_SIZE), requires_grad=True
+        )  # (N, C, H, W)
         targets = torch.randint(0, NUM_CLASSES, size=(BATCH_SIZE, *IMG_SIZE))  # (N, H, W)
     else:  # MULTILABEL_MODE
-        logits = torch.randn(size=(BATCH_SIZE, NUM_CLASSES, *IMG_SIZE), requires_grad=True)  # (N, C, H, W)
-        targets = torch.randint(0, NUM_CLASSES, size=(BATCH_SIZE, NUM_CLASSES, *IMG_SIZE)).float()  # (N, C, H, W)
+        logits = torch.randn(
+            size=(BATCH_SIZE, NUM_CLASSES, *IMG_SIZE), requires_grad=True
+        )  # (N, C, H, W)
+        targets = torch.randint(
+            0, NUM_CLASSES, size=(BATCH_SIZE, NUM_CLASSES, *IMG_SIZE)
+        ).float()  # (N, C, H, W)
 
     # Compute loss
     loss = loss_fn(logits, targets)
@@ -78,7 +85,9 @@ def test_loss_computation(loss_fn, mode):
 )
 def test_ensemble_loss(loss_fn):
     """Ensure that Ensemble loss properly combines multiple loss functions."""
-    logits = torch.randn(size=(BATCH_SIZE, NUM_CLASSES, *IMG_SIZE), requires_grad=True)  # (N, C, H, W)
+    logits = torch.randn(
+        size=(BATCH_SIZE, NUM_CLASSES, *IMG_SIZE), requires_grad=True
+    )  # (N, C, H, W)
     targets = torch.randint(0, NUM_CLASSES, size=(BATCH_SIZE, *IMG_SIZE))  # (N, H, W)
 
     loss = loss_fn(logits, targets)

@@ -6,7 +6,7 @@ from src.models import SiameseResNetUNet
 
 def read_config(path: str) -> dict[str, str]:
     """load YAML file"""
-    with open(path, "r") as file:
+    with open(path) as file:
         config = yaml.safe_load(file)
     return config
 

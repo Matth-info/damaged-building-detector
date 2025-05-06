@@ -3,7 +3,8 @@ import torch.nn as nn
 
 from .help_funcs import DecoderBlock, choose_resnet
 
-### Inpired by FC-Siam-diff. from FULLY CONVOLUTIONAL SIAMESE NETWORKS FORCHANGE DETECTION by  Rodrigo Caye Daudt, Bertrand Le Saux, Alexandre Boulch
+
+# Inpired by FC-Siam-diff. from FULLY CONVOLUTIONAL SIAMESE NETWORKS FORCHANGE DETECTION by  Rodrigo Caye Daudt, Bertrand Le Saux, Alexandre Boulch
 class SiameseResNetUNet(nn.Module):
     """
     Siamese U-Net with a ResNet backbone for remote sensing change detection.

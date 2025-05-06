@@ -16,7 +16,9 @@ class ResNet_UNET(nn.Module):
         super().__init__()
 
         # Modify first layer of ResNet34 to accept custom number of channels
-        self.filters, resnet = choose_resnet(model_name=backbone_name, pretrained=pretrained)  # Change this line
+        self.filters, resnet = choose_resnet(
+            model_name=backbone_name, pretrained=pretrained
+        )  # Change this line
 
         # Modify input channels if not 3
         if in_channels != 3:

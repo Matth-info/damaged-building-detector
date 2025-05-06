@@ -1,17 +1,16 @@
 import os
 from pathlib import Path
-from typing import List, Dict, Optional
+from typing import Dict, List, Optional
 
+import albumentations as A
+import numpy as np
 import rasterio
 import torch
-import numpy as np
-import albumentations as A
 
 from .base import Segmentation_Dataset
 
 
 class OpenCities_Building_Dataset(Segmentation_Dataset):
-
     MEAN = None
     STD = None
 
@@ -58,8 +57,9 @@ class OpenCities_Building_Dataset(Segmentation_Dataset):
         Removes invalid samples (image and mask) from the dataset.
         Some images might be corrupted and cannot be opened by rasterio.
         """
-        from tqdm import tqdm
         import logging
+
+        from tqdm import tqdm
 
         valid_filenames = []  # Store valid filenames
 
@@ -76,7 +76,9 @@ class OpenCities_Building_Dataset(Segmentation_Dataset):
                 valid_filenames.append(image_path)
             except (rasterio.errors.RasterioIOError, FileNotFoundError) as e:
                 # Log the error and skip this sample
-                logging.warning(f"Error opening image or mask for {image_path}. Skipping this file.")
+                logging.warning(
+                    f"Error opening image or mask for {image_path}. Skipping this file."
+                )
 
         # Update the dataset with only valid filenames
         self.filenames = valid_filenames
@@ -84,7 +86,9 @@ class OpenCities_Building_Dataset(Segmentation_Dataset):
     def __getitem__(self, idx: int):
         """Fetches and returns a single dataset sample with optional transformations."""
         image_path = self.filenames[idx]
-        filename = self.extract_filename(image_path)  # Convert Path to string before extracting filename
+        filename = self.extract_filename(
+            image_path
+        )  # Convert Path to string before extracting filename
         filename_mask = f"{filename}_mask.tif"
         mask_path = os.path.join(self.masks_dir, filename_mask)
         image = self.read_image(image_path)
@@ -147,7 +151,7 @@ class OpenCities_Building_Dataset(Segmentation_Dataset):
                 if image.ndim == 3 and image.shape[0] == 3:  # (C, H, W)
                     image = image.transpose(1, 2, 0)  # Convert from (C, H, W) to (H, W, C)
 
-            mask = np.where(sample["mask"] == 1, 255, 0)  # For compatibility and readibility
+            mask = np.where(sample["mask"] == 1, 255, 0)  # For compatibility and readability
 
             # Display the image and the corresponding mask
             ax[i][0].imshow(image)

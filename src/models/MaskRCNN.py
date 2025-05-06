@@ -1,9 +1,9 @@
+import numpy as np
 import torch
 import torchvision
 from torch import nn
 from torchvision.models.detection.faster_rcnn import FastRCNNPredictor
 from torchvision.models.detection.mask_rcnn import MaskRCNNPredictor
-import numpy as np
 
 
 class Maskrcnn(nn.Module):
@@ -27,7 +27,9 @@ class Maskrcnn(nn.Module):
         # Replace the mask predictor for segmentation
         in_features_mask = self.model.roi_heads.mask_predictor.conv5_mask.in_channels
         hidden_layer = hidden_layer_dim
-        self.model.roi_heads.mask_predictor = MaskRCNNPredictor(in_features_mask, hidden_layer, num_classes)
+        self.model.roi_heads.mask_predictor = MaskRCNNPredictor(
+            in_features_mask, hidden_layer, num_classes
+        )
 
     def forward(self, images, targets=None):
         """
@@ -71,8 +73,12 @@ class Maskrcnn(nn.Module):
                 binarized_masks = (pred_masks > mask_threshold).squeeze(1)  # Shape: [N, H, W]
 
                 # Create a score map and a label map
-                score_map = torch.zeros_like(binarized_masks[0], dtype=torch.float32)  # Shape: [H, W]
-                label_map = torch.zeros_like(binarized_masks[0], dtype=torch.int64)  # Shape: [H, W]
+                score_map = torch.zeros_like(
+                    binarized_masks[0], dtype=torch.float32
+                )  # Shape: [H, W]
+                label_map = torch.zeros_like(
+                    binarized_masks[0], dtype=torch.int64
+                )  # Shape: [H, W]
 
                 # Iterate through each instance
                 for mask, label, score in zip(binarized_masks, pred_labels, pred_scores):

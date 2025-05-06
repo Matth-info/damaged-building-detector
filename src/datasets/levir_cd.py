@@ -1,10 +1,10 @@
-from typing import List
 from pathlib import Path
+from typing import List
 
-import numpy as np
-from PIL import Image
-import torch
 import matplotlib.pyplot as plt
+import numpy as np
+import torch
+from PIL import Image
 
 from .base import Change_Detection_Dataset
 from .utils import is_image_file

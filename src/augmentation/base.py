@@ -1,13 +1,12 @@
 import os
 import pathlib
 
-import matplotlib.pyplot as plt
-
 import albumentations as A
-from torchvision.transforms import v2
+import matplotlib.pyplot as plt
+import numpy as np
 from albumentations.core.composition import OneOf
 from albumentations.pytorch import ToTensorV2
-import numpy as np
+from torchvision.transforms import v2
 
 from src.data import renormalize_image
 
@@ -87,10 +86,14 @@ class Augmentation_pipeline:
                 )
         elif self.mode == "infer":
             if self.image_size is not None:
-                transforms.append(A.Resize(height=self.image_size[0], width=self.image_size[1], p=1.0))
+                transforms.append(
+                    A.Resize(height=self.image_size[0], width=self.image_size[1], p=1.0)
+                )
         else:
             if self.image_size is not None:
-                transforms.append(A.CenterCrop(height=self.image_size[0], width=self.image_size[1], p=1.0))
+                transforms.append(
+                    A.CenterCrop(height=self.image_size[0], width=self.image_size[1], p=1.0)
+                )
 
         if self.mode == "train":
             transforms.extend(
@@ -188,7 +191,9 @@ class Augmentation_pipeline:
             results = self.pipeline(image=image_1, post_image=image_2, mask=mask)
 
             image = np.transpose(
-                renormalize_image(results["image"], mean=self.mean, std=self.std, device="cpu").numpy(),
+                renormalize_image(
+                    results["image"], mean=self.mean, std=self.std, device="cpu"
+                ).numpy(),
                 (1, 2, 0),
             )
 
@@ -224,7 +229,6 @@ class Augmentation_pipeline:
 
 
 def _extract_fields(config_dict: dict):
-
     _config_dict = config_dict["transform"] if "transform" in config_dict.keys() else config_dict
 
     result = {

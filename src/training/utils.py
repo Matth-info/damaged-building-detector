@@ -1,26 +1,27 @@
 # Core Python imports
+import logging
 import os
 import random
 from collections import Counter
-from prettytable import PrettyTable
-from tqdm import tqdm
-from typing import Union, Dict, Any
-import logging
+from typing import Any, Dict, Union
+
+import mlflow
+
+# Third-party libraries
+import numpy as np
 
 # PyTorch imports
 import torch
 import torch.nn as nn
-from torch.utils.data import Dataset, DataLoader
-from torch.utils.data.sampler import WeightedRandomSampler
 
 # PyTorch Vision imports
 import torchvision
-from torchvision.utils import save_image
-
-# Third-party libraries
-import numpy as np
-import mlflow
 from mlflow.models.signature import infer_signature
+from prettytable import PrettyTable
+from torch.utils.data import DataLoader, Dataset
+from torch.utils.data.sampler import WeightedRandomSampler
+from torchvision.utils import save_image
+from tqdm import tqdm
 
 from src.utils.visualization import apply_color_map
 
@@ -34,7 +35,9 @@ __all__ = [
 ]
 
 
-def initialize_optimizer_scheduler(model, optimizer=None, scheduler=None, optimizer_params=None, scheduler_params=None):
+def initialize_optimizer_scheduler(
+    model, optimizer=None, scheduler=None, optimizer_params=None, scheduler_params=None
+):
     """
     Initializes the optimizer and learning rate scheduler.
 
@@ -162,7 +165,7 @@ def log_loss(loss_value: float, step_number: int, phase: str = "Validation"):
     - step_number: The current step number.
     - phase: 'Validation' or 'Training', used to distinguish metrics in TensorBoard.
     """
-    mlflow.log_metric(f"{phase}_loss", f"{loss_value:2f}", step=step_number)
+    mlflow.log_metric(f"{phase}_loss", f"{loss_value: 2f}", step=step_number)
 
 
 """
@@ -427,7 +430,9 @@ def log_images_to_mlflow(
     else:
         # Default behavior: no color map (just grayscale)
         colored_labels = labels.unsqueeze(1).float() / 255.0  # Normalize to [0, 1] for grayscale
-        colored_predictions = predictions.unsqueeze(1).float() / 255.0  # Normalize to [0, 1] for grayscale
+        colored_predictions = (
+            predictions.unsqueeze(1).float() / 255.0
+        )  # Normalize to [0, 1] for grayscale
 
     # Ensure the log directory exists
     os.makedirs(log_dir, exist_ok=True)
@@ -457,7 +462,7 @@ def log_images_to_mlflow(
 
 
 def save_model(model, ckpt_path="./models", name="model"):
-    path = os.path.join(ckpt_path, "{}.pth".format(name))
+    path = os.path.join(ckpt_path, f"{name}.pth")
     torch.save(model.state_dict(), path, _use_new_zipfile_serialization=False)
 
 
@@ -475,7 +480,7 @@ def display_metrics(metrics, phase):
         phase (str): The phase of training (e.g., 'training', 'validation').
         metrics (dict): Dictionary containing metric names and their values.
     """
-    print(f"\nMetrics ({phase.capitalize()} Phase):\n")
+    print(f"\nMetrics ({phase.capitalize()} Phase): \n")
     table = PrettyTable()
     table.field_names = ["Metric", "Value"]
 
@@ -483,13 +488,15 @@ def display_metrics(metrics, phase):
         # Convert the value to a float if it's a numpy float
         if hasattr(value, "item"):
             value = value.item()
-        table.add_row([metric, f"{value:.4f}"])
+        table.add_row([metric, f"{value: .4f}"])
 
     print(table)
 
 
-############ Utils for dealing with class imbalanced datasets ########################
-def define_weighted_random_sampler(dataset, mask_key="post_mask", subset_size=None, seed: int = None):
+# Utils for dealing with class imbalanced datasets
+def define_weighted_random_sampler(
+    dataset, mask_key="post_mask", subset_size=None, seed: int = None
+):
     """
     Define a WeightedRandomSampler for a segmentation dataset to address class imbalance.
 
@@ -500,7 +507,7 @@ def define_weighted_random_sampler(dataset, mask_key="post_mask", subset_size=No
         seed : seed number
     Returns:
         sampler: A WeightedRandomSampler for balanced class sampling.
-        class_weights: Inversely propotional class weights for imbalance dataset.
+        class_weights: Inversely proportional class weights for imbalance dataset.
     """
     if seed is not None:
         random.seed(seed)
@@ -534,7 +541,9 @@ def define_weighted_random_sampler(dataset, mask_key="post_mask", subset_size=No
         sample_weights.append(sample_weight)
 
     # Create the WeightedRandomSampler
-    sampler = WeightedRandomSampler(weights=sample_weights, num_samples=len(dataset), replacement=True)
+    sampler = WeightedRandomSampler(
+        weights=sample_weights, num_samples=len(dataset), replacement=True
+    )
 
     return sampler, class_weights
 
@@ -550,7 +559,7 @@ def define_class_weights(dataset, mask_key="post_mask", subset_size=None, seed: 
         seed : seed number
     Returns:
         sampler: A WeightedRandomSampler for balanced class sampling.
-        class_weights: Inversely propotional class weights for imbalance dataset.
+        class_weights: Inversely proportional class weights for imbalance dataset.
     """
     if seed is not None:
         random.seed(seed)
@@ -575,10 +584,11 @@ def define_class_weights(dataset, mask_key="post_mask", subset_size=None, seed: 
     return class_weights
 
 
-############ Utils Functions for Fine Tuning Mask-R-CNN ##############################
+# Utils Functions for Fine Tuning Mask-R-CNN #
 
 import math
 import sys
+
 import torch
 import torch.distributed as dist
 

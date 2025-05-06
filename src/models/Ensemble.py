@@ -13,7 +13,7 @@ class EnsembleModel(nn.Module):
                                Options: "mean", "vote". Default is "mean".
             is_siamese (bool): Whether the models in the ensemble are Siamese networks.
         """
-        super(EnsembleModel, self).__init__()
+        super().__init__()
         if not all(isinstance(model, nn.Module) for model in models):
             raise TypeError("All models should inherit from nn.Module.")
         if aggregation not in ["mean", "vote"]:
@@ -48,7 +48,9 @@ class EnsembleModel(nn.Module):
         if self.aggregation == "mean":
             return torch.mean(outputs, dim=0)  # Average predictions
         elif self.aggregation == "vote":
-            return torch.mode(outputs.argmax(dim=-1), dim=0)[0]  # Majority vote on class predictions
+            return torch.mode(outputs.argmax(dim=-1), dim=0)[
+                0
+            ]  # Majority vote on class predictions
 
     @torch.no_grad()
     def predict(self, *inputs):

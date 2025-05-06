@@ -1,16 +1,15 @@
 # Dataset folder keep track of the custom pytorch dataset that have been used to load, preprocess data according to the source dataset and the model specificity
-import torch
-import albumentations as A
-import numpy as np
-import pandas as pd
-from PIL import Image
 from pathlib import Path
 from typing import List, Optional
-import matplotlib.pyplot as plt
 
+import albumentations as A
+import matplotlib.pyplot as plt
+import numpy as np
+import pandas as pd
+import torch
+from PIL import Image
 
 from .base import Cloud_Dataset
-
 
 __all__ = ["prepare_cloud_segmentation_data"]
 
@@ -90,7 +89,9 @@ class Cloud_DrivenData_Dataset(Cloud_Dataset):
 
     def true_color_img(self, idx):
         visible_bands = ["B04", "B03", "B02"]  # RGB
-        band_arrs = [self.load_channel(self.data.loc[idx][f"{band}_path"]) for band in visible_bands]
+        band_arrs = [
+            self.load_channel(self.data.loc[idx][f"{band}_path"]) for band in visible_bands
+        ]
         x_arr = np.stack(band_arrs, axis=-1)
         # Normalize the array (divide by max value to scale between 0 and 1)
         x_arr = (x_arr - x_arr.min()) / (x_arr.max() - x_arr.min())
@@ -147,8 +148,6 @@ class Cloud_DrivenData_Dataset(Cloud_Dataset):
         Args:
             list_indices (List[int]): List of indices to display.
         """
-        import matplotlib.pyplot as plt  # Ensure matplotlib is imported
-
         num_samples = len(list_indices)
         rows = num_samples  # Calculate the number of rows for the subplot grid
         cols = 2  # Fixed number of columns: image and mask
@@ -231,7 +230,7 @@ def add_paths(
     # Add "has_image_channels" to check if all bands exist
     df["has_image_channels"] = df[[f"has_{band}_path" for band in bands]].all(axis=1)
     # Add label path and check existence if label_dir is provided
-    if label_dir is not None:
+    if label_dir:
         df["label_path"] = label_dir / (df["chip_id"] + ".tif")
         # Check if the label file exists and add a boolean column
         df["has_label_path"] = df["label_path"].apply(lambda x: x.exists())
@@ -240,7 +239,7 @@ def add_paths(
     # Add "accessible" column to check if all bands and label file exist
     df["accessible"] = df["has_image_channels"] & df["has_label_path"]
 
-    return df[df["accessible"] == True][selected_columns]
+    return df[df["accessible"]][selected_columns]
 
 
 def prepare_cloud_segmentation_data(
@@ -264,9 +263,10 @@ def prepare_cloud_segmentation_data(
                - val_x: Validation features dataframe
                - val_y: Validation labels dataframe
     """
-    from pathlib import Path
-    import pandas as pd
     import random
+    from pathlib import Path
+
+    import pandas as pd
 
     random.seed(seed)
 

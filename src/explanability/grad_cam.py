@@ -1,7 +1,7 @@
+import matplotlib.pyplot as plt
+import numpy as np
 import torch
 import torch.nn.functional as F
-import numpy as np
-import matplotlib.pyplot as plt
 
 
 class GradCAM:
@@ -74,7 +74,9 @@ class GradCAM:
         heatmap = (heatmap - heatmap.min()) / (heatmap.max() - heatmap.min() + 1e-8)
 
         # Resize the heatmap to match input image size
-        heatmap = np.resize(heatmap, (input_tensor.size(2), input_tensor.size(3)))  # Resize to match input image
+        heatmap = np.resize(
+            heatmap, (input_tensor.size(2), input_tensor.size(3))
+        )  # Resize to match input image
         return heatmap
 
     def __call__(self, input_tensor, target_class=None):

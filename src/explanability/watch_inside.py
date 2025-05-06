@@ -1,19 +1,18 @@
-import os
 import argparse
-import yaml
-import random
 import glob
+import os
+import random
 
-import torch
-import torch.nn as nn
-from torch.utils.data import DataLoader
 import matplotlib.pyplot as plt
 import numpy as np
+import torch
+import torch.nn as nn
+import yaml
+from torch.utils.data import DataLoader
 
 from src.augmentation import Augmentation_pipeline
 from src.data import renormalize_image
-from src.explanability.help_funcs import read_config, DATASET_MAPPER, MODEL_MAPPER
-
+from src.explanability.help_funcs import DATASET_MAPPER, MODEL_MAPPER, read_config
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 # Dictionaries to store feature maps
@@ -102,7 +101,9 @@ def visualize_feature_maps(
         random.sample(list(range(len(feature_maps_pre_list))), min(k, len(feature_maps_pre_list)))
     )
     selected_pre_layers = [feature_maps_pre_list[i] for i in selected_pre_layers_ids]
-    selected_post_layers = [(layer_name, feature_maps_post[layer_name]) for layer_name, _ in selected_pre_layers]
+    selected_post_layers = [
+        (layer_name, feature_maps_post[layer_name]) for layer_name, _ in selected_pre_layers
+    ]
 
     num_cols = max(4, min(k, len(feature_maps_pre_list)))
     num_rows = 4  # Fixed structure: input row + pre + post + decoder
@@ -118,7 +119,9 @@ def visualize_feature_maps(
 
     def process_feature_maps(feature_maps):
         feature_maps = feature_maps.mean(dim=1).squeeze().cpu().numpy()
-        return (feature_maps - feature_maps.min()) / (feature_maps.max() - feature_maps.min() + 1e-6)
+        return (feature_maps - feature_maps.min()) / (
+            feature_maps.max() - feature_maps.min() + 1e-6
+        )
 
     # Plot row 1: Input Images, Predictions, Ground Truth
     plt.subplot(num_rows, num_cols, 1)
@@ -169,7 +172,9 @@ def visualize_feature_maps(
 
 
 def main():
-    parser = argparse.ArgumentParser(prog="WatchInside", description="Plot Internal Layer representation")
+    parser = argparse.ArgumentParser(
+        prog="WatchInside", description="Plot Internal Layer representation"
+    )
     parser.add_argument("--config_path", default=None, type=str)
     args = parser.parse_args()
     config_dict = read_config(args.config_path)
@@ -177,7 +182,9 @@ def main():
     # Load model
     model_class = MODEL_MAPPER.get(config_dict.get("model_class", None), None)
     model_params = config_dict.get("model_params", None)
-    checkpoint_path = f"{config_dict.get('checkpoint_folder')}/{config_dict.get('checkpoint_name')}"
+    checkpoint_path = (
+        f"{config_dict.get('checkpoint_folder')}/{config_dict.get('checkpoint_name')}"
+    )
     model = model_class(**model_params)
     if os.path.exists(checkpoint_path):
         model = model.load(file_path=checkpoint_path).eval()
@@ -190,7 +197,9 @@ def main():
     mean, std = dataset_class.MEAN, dataset_class.STD
 
     image_size = config_dict.get("image_size")
-    transform = Augmentation_pipeline(image_size=(image_size, image_size), mean=mean, std=std, mode="test")
+    transform = Augmentation_pipeline(
+        image_size=(image_size, image_size), mean=mean, std=std, mode="test"
+    )
     dataset = dataset_class(origin_dir=dataset_path, type="test", transform=transform)
     dataloader = DataLoader(dataset, batch_size=1, shuffle=True)
 

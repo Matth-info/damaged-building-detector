@@ -1,20 +1,20 @@
 # Config File for internal layer inspection
-model_class : siamese_resnet_unet
-model_params :
-  in_channels : 3
-  out_channels : 2
-  mode : conc
-  backbone_name : resnet18
-  pretrained : False
+model_class: siamese_resnet_unet
+model_params:
+  in_channels: 3
+  out_channels: 2
+  mode: conc
+  backbone_name: resnet18
+  pretrained: False
   freeze_backbone: True
 
-checkpoint_folder : ../../models
-data_folder : ../../data
-checkpoint_name : Levir_CD_Siamese_ResNet18_Unet_20250106-184502_best_model.pth
+checkpoint_folder: ../../models
+data_folder: ../../data
+checkpoint_name: Levir_CD_Siamese_ResNet18_Unet_20250106-184502_best_model.pth
 
-dataset_name : levir_cd
-dataset_path : Levir-cd-v2
-image_size : 256
-nb_classes : 2
+dataset_name: levir_cd
+dataset_path: Levir-cd-v2
+image_size: 256
+nb_classes: 2
 
-output_folder : ./outputs
+output_folder: ./outputs

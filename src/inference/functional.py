@@ -1,12 +1,10 @@
-from tqdm import tqdm
-from PIL import Image
-
-import torch
-from torchvision.transforms import v2
 import albumentations as A
-
-import numpy as np
 import matplotlib.pyplot as plt
+import numpy as np
+import torch
+from PIL import Image
+from torchvision.transforms import v2
+from tqdm import tqdm
 
 
 class Inference:
@@ -111,7 +109,9 @@ class Inference:
                 if self.mode == "siamese":
                     post_patch = (
                         self.transform(
-                            Image.fromarray(post_image_np[y : y + self.window_size, x : x + self.window_size])
+                            Image.fromarray(
+                                post_image_np[y : y + self.window_size, x : x + self.window_size]
+                            )
                         )
                         .unsqueeze(0)
                         .to(self.device)

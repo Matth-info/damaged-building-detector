@@ -1,9 +1,9 @@
-from .functional import Inference
 from .batch_inference import (
     batch_inference,
     custom_infer_collate,
     custom_infer_collate_siamese,
 )
+from .functional import Inference
 
 __all_ = [
     "Inference",

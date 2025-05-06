@@ -1,6 +1,7 @@
+from typing import List, Optional
+
 import torch
 from torch.nn.modules.loss import _Loss
-from typing import List, Optional
 
 
 class Ensemble(_Loss):

@@ -1,26 +1,26 @@
+from .confusionmatrix import ConfusionMatrix
 from .functional import (
-    get_stats,
-    fbeta_score,
-    f1_score,
-    iou_score,
     accuracy,
+    balanced_accuracy,
+    f1_score,
+    false_discovery_rate,
+    false_negative_rate,
+    false_omission_rate,
+    false_positive_rate,
+    fbeta_score,
+    get_stats,
+    iou_score,
+    negative_likelihood_ratio,
+    negative_predictive_value,
+    positive_likelihood_ratio,
+    positive_predictive_value,
     precision,
     recall,
     sensitivity,
     specificity,
-    balanced_accuracy,
-    positive_predictive_value,
-    negative_predictive_value,
-    false_negative_rate,
-    false_positive_rate,
-    false_discovery_rate,
-    false_omission_rate,
-    positive_likelihood_ratio,
-    negative_likelihood_ratio,
 )
-from .utils import compute_model_class_performance
-from .confusionmatrix import ConfusionMatrix
 from .iou import IoU
+from .utils import compute_model_class_performance
 
 __all__ = [
     "get_stats",

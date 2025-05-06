@@ -1,13 +1,14 @@
+from typing import Dict, Optional
+
+import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from typing import Dict, Optional
 from transformers import (
     AutoConfig,
-    AutoModelForSemanticSegmentation,
     AutoImageProcessor,
+    AutoModelForSemanticSegmentation,
 )
-import numpy as np
 
 
 def extract_dimension(image):
@@ -70,7 +71,9 @@ class Segformer(nn.Module):
         # Forward pass through the model
         outputs = self.model(**inputs)
 
-        logits = F.interpolate(outputs.logits, size=original_size, mode="bilinear", align_corners=False)
+        logits = F.interpolate(
+            outputs.logits, size=original_size, mode="bilinear", align_corners=False
+        )
 
         return logits
 
@@ -134,7 +137,9 @@ class Segformer(nn.Module):
         model = AutoModelForSemanticSegmentation.from_pretrained(
             path, config=config, trust_remote_code=True, local_files_only=True
         )
-        image_processor = AutoImageProcessor.from_pretrained(path, trust_remote_code=True, local_files_only=True)
+        image_processor = AutoImageProcessor.from_pretrained(
+            path, trust_remote_code=True, local_files_only=True
+        )
 
         # Create an instance of the Segformer class
         segformer_instance = cls(

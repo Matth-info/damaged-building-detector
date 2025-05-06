@@ -1,20 +1,23 @@
-import os
-from typing import Tuple, List
 import logging
+import os
 import re
 from pathlib import Path
+from typing import List, Tuple
+
+import folium
+import matplotlib.pyplot as plt
+import numpy as np
+from mpl_toolkits.basemap import Basemap
 from PIL import Image
 from tqdm import tqdm
 
-import folium
-import numpy as np
-import matplotlib.pyplot as plt
-from mpl_toolkits.basemap import Basemap
-
-
+from src.data.utils import (
+    extract_coordinates_parallel,
+    extract_title_ij,
+    filter_files_by_bounds,
+    read_tiff_rasterio,
+)
 from src.utils.visualization import add_image_transparency, make_background_transparent
-
-from src.data.utils import read_tiff_rasterio, extract_title_ij, extract_coordinates_parallel, filter_files_by_bounds
 
 logging.basicConfig(level=logging.ERROR, format="%(asctime)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
@@ -54,12 +57,21 @@ def display_tiles_by_coordinates_folium(
 
     file_list = os.listdir(pre_image_folder_path)
 
-    coordinates = extract_coordinates_parallel(filepaths=file_list, folder_path=pre_image_folder_path, max_workers=8)
+    coordinates = extract_coordinates_parallel(
+        filepaths=file_list, folder_path=pre_image_folder_path, max_workers=8
+    )
     file_list, coordinates = filter_files_by_bounds(
-        filepaths=file_list, coordinates=coordinates, lon_min=lon_min, lon_max=lon_max, lat_min=lat_min, lat_max=lat_max
+        filepaths=file_list,
+        coordinates=coordinates,
+        lon_min=lon_min,
+        lon_max=lon_max,
+        lat_min=lat_min,
+        lat_max=lat_max,
     )
 
-    for each_file, extent in tqdm(zip(file_list, coordinates), desc="Processing Images", total=len(file_list)):
+    for each_file, extent in tqdm(
+        zip(file_list, coordinates), desc="Processing Images", total=len(file_list)
+    ):
         if each_file.lower().endswith(".tif"):
             pre_path = os.path.join(pre_image_folder_path, each_file)
 
@@ -184,7 +196,9 @@ def display_tiles_by_indices(
             pred_path = os.path.join(pred_folder_path, each_file)
             if os.path.exists(pred_path):
                 try:
-                    pred_img, _ = read_tiff_rasterio(pred_path, bands=[1, 2, 3, 4], with_profile=False)
+                    pred_img, _ = read_tiff_rasterio(
+                        pred_path, bands=[1, 2, 3, 4], with_profile=False
+                    )
                     pred_img_pil = Image.fromarray(pred_img).convert("RGBA")
                     base_img_pil = Image.fromarray(base_img).convert("RGBA")
                     # Blended base image and prediction mask

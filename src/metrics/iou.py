@@ -1,5 +1,6 @@
-import torch
 import numpy as np
+import torch
+
 from .confusionmatrix import ConfusionMatrix
 from .metric import Metric
 
@@ -51,7 +52,9 @@ class IoU(Metric):
                            K classes, or (N, H, W) tensor of integer values between 0 and K-1.
         """
         # Validate batch sizes
-        assert predicted.size(0) == target.size(0), "Number of targets and predicted outputs do not match"
+        assert predicted.size(0) == target.size(
+            0
+        ), "Number of targets and predicted outputs do not match"
 
         # Validate dimensions
         assert predicted.dim() in [

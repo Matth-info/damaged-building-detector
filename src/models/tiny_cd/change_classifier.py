@@ -1,7 +1,7 @@
 from typing import List
 
-import torchvision
 import torch
+import torchvision
 from torch import Tensor
 from torch.nn import Identity, Module, ModuleList
 
@@ -70,7 +70,9 @@ class TinyCD(Module):
 
 def _get_backbone(bkbn_name, pretrained, output_layer_bkbn, freeze_backbone) -> ModuleList:
     # The whole model:
-    entire_model = getattr(torchvision.models, bkbn_name)(weights="DEFAULT" if pretrained else None).features
+    entire_model = getattr(torchvision.models, bkbn_name)(
+        weights="DEFAULT" if pretrained else None
+    ).features
 
     # Slicing it:
     derived_model = ModuleList([])

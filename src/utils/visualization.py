@@ -1,10 +1,9 @@
 # Visualization utils functions
 import os
-from typing import Dict, Tuple
+from typing import Dict, List, Tuple
 
 import matplotlib.pyplot as plt
 import numpy as np
-from typing import List
 import torch
 from torchvision.utils import draw_bounding_boxes, draw_segmentation_masks
 
@@ -42,6 +41,7 @@ COLOR_DICT = {
     "building": BUILDING_MAPPING,
     "damage": DAMAGE_MAPPING,
 }
+
 
 # Function to apply colors to masks (labels and predictions)
 def apply_color_map(
@@ -115,7 +115,9 @@ def make_background_transparent(mask: np.ndarray):
     return alpha_mask
 
 
-def display_semantic_predictions_batch(images, mask_predictions, mask_labels, normalized=None, folder_path=None):
+def display_semantic_predictions_batch(
+    images, mask_predictions, mask_labels, normalized=None, folder_path=None
+):
     """
     Displays a batch of images alongside their predicted masks and ground truth masks,
     and optionally saves the images in a folder.
@@ -157,7 +159,9 @@ def display_semantic_predictions_batch(images, mask_predictions, mask_labels, no
         # Handle channel-first images (C, H, W) and unnormalize
         if image.ndim == 3 and image.shape[0] == 3:  # RGB images
             image = np.transpose(image, (1, 2, 0))  # Convert to (H, W, C)
-            image = renormalize_image(image, std, mean) if bool_normalized else image  # Unnormalize and clip to [0, 1]
+            image = (
+                renormalize_image(image, std, mean) if bool_normalized else image
+            )  # Unnormalize and clip to [0, 1]
         elif image.ndim == 3 and image.shape[0] == 1:  # Grayscale
             image = image[0]  # Remove channel dimension
 
@@ -207,7 +211,7 @@ def display_instance_predictions_batch(
 
     Parameters:
     - model: The model to use for inference.
-    - batch: batch data = (images, tagets).
+    - batch: batch data = (images, targets).
     - device: The device to run the inference on ('cuda' or 'cpu').
     - score_threshold: The threshold above which predictions are considered valid.
     - max_images: The number of images to display.
@@ -227,7 +231,9 @@ def display_instance_predictions_batch(
         image = images[i]
 
         # Normalize and convert to uint8
-        output_image = (255.0 * (image - image.min()) / (image.max() - image.min())).to(torch.uint8)
+        output_image = (255.0 * (image - image.min()) / (image.max() - image.min())).to(
+            torch.uint8
+        )
 
         # Filter out low-confidence predictions
         mask = pred["scores"] > score_threshold
@@ -237,13 +243,17 @@ def display_instance_predictions_batch(
 
         # Draw bounding boxes
         if "boxes" in display:
-            output_image = draw_bounding_boxes(output_image, pred_boxes.long(), labels=pred_labels, colors="red")
+            output_image = draw_bounding_boxes(
+                output_image, pred_boxes.long(), labels=pred_labels, colors="red"
+            )
 
         # Draw segmentation masks
         if "masks" in display:
             if pred_masks.numel() > 0:  # Ensure there are masks to draw
                 masks = (pred_masks > 0.5).squeeze(1)  # Binarize the masks
-                output_image = draw_segmentation_masks(output_image, masks, alpha=0.5, colors="blue")
+                output_image = draw_segmentation_masks(
+                    output_image, masks, alpha=0.5, colors="blue"
+                )
 
         # Move the output image to the CPU and convert to NumPy array for plotting
         output_image = output_image.cpu()

@@ -1,8 +1,7 @@
 import math
-import numpy as np
-
 from typing import Optional
 
+import numpy as np
 import torch
 import torch.linalg as LA
 import torch.nn.functional as F
@@ -205,11 +204,15 @@ def soft_tversky_score(
     fp = output_sum - intersection
     fn = target_sum - intersection
 
-    tversky_score = (intersection + smooth) / (intersection + alpha * fp + beta * fn + smooth).clamp_min(eps)
+    tversky_score = (intersection + smooth) / (
+        intersection + alpha * fp + beta * fn + smooth
+    ).clamp_min(eps)
     return tversky_score
 
 
-def wing_loss(output: torch.Tensor, target: torch.Tensor, width=5, curvature=0.5, reduction="mean"):
+def wing_loss(
+    output: torch.Tensor, target: torch.Tensor, width=5, curvature=0.5, reduction="mean"
+):
     """Wing loss
 
     References:

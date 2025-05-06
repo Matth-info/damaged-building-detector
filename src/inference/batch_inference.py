@@ -1,26 +1,38 @@
 import os
-from tqdm import tqdm
 from typing import Tuple
-from PIL import Image
 
-import torch
-from torch import nn
-from torch.utils.data import DataLoader
 import numpy as np
 import rasterio
+import torch
+from PIL import Image
 from rasterio.profiles import Profile
-
-from src.utils.visualization import apply_color_map, DEFAULT_MAPPING, COLOR_DICT
+from torch import nn
+from torch.utils.data import DataLoader
+from tqdm import tqdm
 
 from src.data.utils import save_numpy_rasterGeoTiff
+from src.utils.visualization import COLOR_DICT, DEFAULT_MAPPING, apply_color_map
 
 
 def custom_infer_collate_siamese(batch: list[dict]):
+    """_summary_
+
+    Args:
+        batch (list[dict]): _description_
+
+    Returns:
+        _type_: _description_
+    """
     pre_images = torch.stack([item["pre_image"] for item in batch])
     post_images = torch.stack([item["post_image"] for item in batch])
     filenames = [item["filename"] for item in batch]
     profiles = [item["profile"] for item in batch]
-    return {"pre_image": pre_images, "post_image": post_images, "filename": filenames, "profile": profiles}
+    return {
+        "pre_image": pre_images,
+        "post_image": post_images,
+        "filename": filenames,
+        "profile": profiles,
+    }
 
 
 def custom_infer_collate(batch: list[dict]):
@@ -50,9 +62,9 @@ def save_batch_prediction(
         color_map (dict): Optional color mapping for PNGs (class -> RGB).
     """
 
-    mask_predictions = 255.0 * apply_color_map(predictions, color_map, with_transparency=True).permute(
-        0, 2, 3, 1
-    ).numpy().astype(
+    mask_predictions = 255.0 * apply_color_map(
+        predictions, color_map, with_transparency=True
+    ).permute(0, 2, 3, 1).numpy().astype(
         np.uint8
     )  # RGB batch (B, C, H, W) -> (B, H, W, C)
 
@@ -101,7 +113,7 @@ def batch_inference(
     model.to(device)
     model.eval()
     with torch.no_grad():
-        with tqdm(dataloader, desc=f"Inference Running", unit="batch") as t:
+        with tqdm(dataloader, desc="Inference Running", unit="batch") as t:
             for batch in t:
                 filenames, profiles = batch["filename"], batch["profile"]
                 if siamese:

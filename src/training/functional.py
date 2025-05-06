@@ -1,41 +1,27 @@
-from typing import List, Callable, Dict, Optional, Tuple
+import logging
+import math
+import os
+import time
+
+# utils import
+from datetime import datetime
+from typing import Callable, Dict, List, Optional, Tuple
+
+import albumentations as A
+
+# mlflow
+import mlflow
+import numpy as np
 
 # PyTorch imports
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
-from torch.utils.data import DataLoader
-from torch.amp import autocast, GradScaler
+from torch.amp import GradScaler, autocast
 from torch.nn.modules.loss import _Loss
-
-# utils import
-from datetime import datetime
-import os
-import albumentations as A
-
-import time
-import numpy as np
-import math
-import logging
+from torch.utils.data import DataLoader
 from tqdm import tqdm
-
-
-from .utils import (
-    log_metrics,
-    log_loss,
-    log_images_to_mlflow,
-    log_model,
-    save_model,
-    load_model,
-    display_metrics,
-    custom_infer_signature,
-    save_checkpoint,
-    load_checkpoint,
-    initialize_optimizer_scheduler,
-)
-
-from src.metrics import compute_model_class_performance
 
 from src.augmentation.augmentations import (
     augmentation_test_time,
@@ -43,10 +29,21 @@ from src.augmentation.augmentations import (
 )
 
 # from custom metrics and losses
-from src.metrics import get_stats
+from src.metrics import compute_model_class_performance, get_stats
 
-# mlflow
-import mlflow
+from .utils import (
+    custom_infer_signature,
+    display_metrics,
+    initialize_optimizer_scheduler,
+    load_checkpoint,
+    load_model,
+    log_images_to_mlflow,
+    log_loss,
+    log_metrics,
+    log_model,
+    save_checkpoint,
+    save_model,
+)
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -97,14 +94,20 @@ def training_step(
     """
     # Extract inputs and targets from the batch
     if siamese:
-        x1 = batch["pre_image"].to(device, non_blocking=True, dtype=torch.float32)  # Pre-disaster image
-        x2 = batch["post_image"].to(device, non_blocking=True, dtype=torch.float32)  # Post-disaster image
+        x1 = batch["pre_image"].to(
+            device, non_blocking=True, dtype=torch.float32
+        )  # Pre-disaster image
+        x2 = batch["post_image"].to(
+            device, non_blocking=True, dtype=torch.float32
+        )  # Post-disaster image
     else:
         x = batch[image_key].to(
             device, non_blocking=True, dtype=torch.float32
         )  # Single input image e.g., FloatTensor (B, C, H, W)
 
-    y = batch[mask_key].to(device, non_blocking=True, dtype=torch.int64)  # Target mask e.g., LongTensor (B, H, W)
+    y = batch[mask_key].to(
+        device, non_blocking=True, dtype=torch.int64
+    )  # Target mask e.g., LongTensor (B, H, W)
 
     optimizer.zero_grad()
 
@@ -118,7 +121,9 @@ def training_step(
             # Compute the loss and its gradients
             loss = loss_fn(outputs, y)
             # adjust the learning weights
-        scaler.scale(loss).backward()  # compute gradient in float16 and multiple gradient by a scale factor
+        scaler.scale(
+            loss
+        ).backward()  # compute gradient in float16 and multiple gradient by a scale factor
         # avoiding underflow = minor change because of weight format
         scaler.unscale_(optimizer)
         torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=max_norm)
@@ -150,7 +155,9 @@ def training_step(
         # Compute each metric
         for metric in metrics:
             metric_name = metric.__name__
-            metrics_step[metric_name] = metric(tp, fp, fn, tn, class_weights=class_weights, reduction=reduction)
+            metrics_step[metric_name] = metric(
+                tp, fp, fn, tn, class_weights=class_weights, reduction=reduction
+            )
 
     return loss_value, metrics_step
 
@@ -192,10 +199,16 @@ def validation_step(
     """
 
     if siamese:
-        x1 = batch["pre_image"].to(device, non_blocking=True, dtype=torch.float32)  # Pre-disaster image
-        x2 = batch["post_image"].to(device, non_blocking=True, dtype=torch.float32)  # Post-disaster image
+        x1 = batch["pre_image"].to(
+            device, non_blocking=True, dtype=torch.float32
+        )  # Pre-disaster image
+        x2 = batch["post_image"].to(
+            device, non_blocking=True, dtype=torch.float32
+        )  # Post-disaster image
     else:
-        x = batch[image_key].to(device, non_blocking=True, dtype=torch.float32)  # Single input image
+        x = batch[image_key].to(
+            device, non_blocking=True, dtype=torch.float32
+        )  # Single input image
 
     y = batch[mask_key].to(device, non_blocking=True, dtype=torch.int64)  # Target mask
 
@@ -380,7 +393,9 @@ def training_epoch(
 
             # Log intermediate results at intervals
             if step % training_log_interval == 0:
-                step_metrics = {name: value / max(1, interval_samples) for name, value in total_metrics.items()}
+                step_metrics = {
+                    name: value / max(1, interval_samples) for name, value in total_metrics.items()
+                }
                 step_number = epoch_number * steps_per_epoch + step
                 log_metrics(metrics=step_metrics, step_number=step_number, phase="Training")
                 log_loss(
@@ -492,7 +507,9 @@ def validation_epoch(
             # Accumulate metrics at defined intervals
             if step % training_log_interval == 0:
                 # Log intermediate metrics
-                step_metrics = {name: value / max(1, interval_samples) for name, value in total_metrics.items()}
+                step_metrics = {
+                    name: value / max(1, interval_samples) for name, value in total_metrics.items()
+                }
                 step_number = epoch_number * steps_per_epoch + step
                 log_metrics(metrics=step_metrics, step_number=step_number, phase="Validation")
 
@@ -552,7 +569,7 @@ def train(
     tta: bool = False,
 ):
     # Connect MLFlow session to the local server
-    mlflow.set_tracking_uri("http://localhost:5000")
+    mlflow.set_tracking_uri("http: //localhost: 5000")
     # Set Experiment name
     mlflow.set_experiment(experiment_name)
 
@@ -740,7 +757,9 @@ def train(
             if verbose and debug:
                 logging.info(f"Epoch {epoch + 1} took {epoch_time:.2f} seconds")
                 if torch.cuda.is_available():
-                    logging.info(f"GPU memory allocated: {torch.cuda.memory_allocated() / 1024**3:.2f} GB")
+                    logging.info(
+                        f"GPU memory allocated: {torch.cuda.memory_allocated() / 1024**3:.2f} GB"
+                    )
 
             # Save periodic checkpoints
             if epoch % checkpoint_interval == 0:
@@ -771,7 +790,7 @@ def train(
         total_time = time.time() - overall_start_time
         logging.info(f"Total training time: {total_time:.2f} seconds")
 
-        ### Testing phase
+        # Testing phase
         compute_model_class_performance(
             model=model,
             dataloader=test_dl,
@@ -829,7 +848,7 @@ def testing(
     total_metrics = {metric.__name__: 0.0 for metric in metrics}  # Initialize totals
 
     # Iterate through the validation dataset
-    with tqdm(test_dataloader, desc=f"Testing", unit="batch") as t:
+    with tqdm(test_dataloader, desc="Testing", unit="batch") as t:
         for batch in t:
             if siamese:
                 batch_size = batch[image_key].size(0)
@@ -865,5 +884,8 @@ def testing(
 
     # Calculate average loss and metrics for the entire validation dataset
     epoch_tloss = running_loss / len(test_dataloader.dataset)
-    test_metrics = {"test_" + name: total / len(test_dataloader.dataset) for name, total in total_metrics.items()}
+    test_metrics = {
+        "test_" + name: total / len(test_dataloader.dataset)
+        for name, total in total_metrics.items()
+    }
     return epoch_tloss, test_metrics

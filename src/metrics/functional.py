@@ -27,10 +27,10 @@ Example:
 
 """
 
-import torch
 import warnings
-from typing import Optional, List, Tuple, Union
+from typing import List, Optional, Tuple, Union
 
+import torch
 
 __all__ = [
     "get_stats",
@@ -54,9 +54,9 @@ __all__ = [
 ]
 
 
-###################################################################################################
+#
 # Statistics computation (true positives, false positives, false negatives, false positives)
-###################################################################################################
+#
 
 
 def get_stats(
@@ -117,13 +117,19 @@ def get_stats(
         raise ValueError(f"Target should be one of the integer types, got {target.dtype}.")
 
     if torch.is_floating_point(output) and threshold is None:
-        raise ValueError(f"Output should be one of the integer types if ``threshold`` is not None, got {output.dtype}.")
+        raise ValueError(
+            f"Output should be one of the integer types if ``threshold`` is not None, got {output.dtype}."
+        )
 
     if torch.is_floating_point(output) and mode == "multiclass":
-        raise ValueError(f"For ``multiclass`` mode ``output`` should be one of the integer types, got {output.dtype}.")
+        raise ValueError(
+            f"For ``multiclass`` mode ``output`` should be one of the integer types, got {output.dtype}."
+        )
 
     if mode not in {"binary", "multiclass", "multilabel"}:
-        raise ValueError(f"``mode`` should be in ['binary', 'multiclass', 'multilabel'], got mode={mode}.")
+        raise ValueError(
+            f"``mode`` should be in ['binary', 'multiclass', 'multilabel'], got mode={mode}."
+        )
 
     if mode == "multiclass" and threshold is not None:
         raise ValueError("``threshold`` parameter does not supported for this 'multiclass' mode")
@@ -215,9 +221,9 @@ def _get_stats_multilabel(
     return tp, fp, fn, tn
 
 
-###################################################################################################
+#
 # Metrics computation
-###################################################################################################
+#
 
 
 def _handle_zero_division(x, zero_division):
@@ -594,7 +600,7 @@ def false_positive_rate(
     class_weights: Optional[List[float]] = None,
     zero_division: Union[str, float] = 1.0,
 ) -> torch.Tensor:
-    """Fall-out or false positive rate (FPR)"""
+    """Fall-out or false positive rate"""
     return _compute_metric(
         _false_positive_rate,
         tp,
@@ -721,7 +727,7 @@ _doc = """
             - 'micro-imagewise'
                 Sum true positive, false positive, false negative and true negative pixels for **each image**,
                 then compute score for **each image** and average scores over dataset. All images contribute equally
-                to final score, however takes into accout class imbalance for each image.
+                to final score, however takes into account class imbalance for each image.
 
             - 'macro-imagewise'
                 Compute score for each image and for each class on that image separately, then compute average score

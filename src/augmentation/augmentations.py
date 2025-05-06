@@ -1,22 +1,23 @@
-from typing import List, Callable
+from typing import Callable, List
 
-import torch.nn as nn
 import albumentations as A
-from albumentations.pytorch import ToTensorV2
-from albumentations.core.composition import OneOf
-
 import numpy as np
+import torch.nn as nn
+from albumentations.core.composition import OneOf
+from albumentations.pytorch import ToTensorV2
 
 
 def load_augmentation_pipeline(config_path="augmentation_config.yaml"):
     return A.load(config_path, data_format="yaml")
 
 
-def save_augmentation_pipeline(transform: A.Compose = None, output_path: str = "augmentation_config.yaml"):
+def save_augmentation_pipeline(
+    transform: A.Compose = None, output_path: str = "augmentation_config.yaml"
+):
     A.save(transform, output_path, data_format="yaml")
 
 
-#### Building Segmentation Model Augmentation Pipeline #####
+# Building Segmentation Model Augmentation Pipeline #
 def get_train_augmentation_pipeline(image_size=(256, 256), max_pixel_value=1, mean=None, std=None):
     transform = A.Compose(
         [
@@ -25,7 +26,9 @@ def get_train_augmentation_pipeline(image_size=(256, 256), max_pixel_value=1, me
             if image_size is not None
             else A.NoOp(),  # Ensure both image and mask are resized
             # Normalize images
-            A.Normalize(mean=mean, std=std, max_pixel_value=max_pixel_value, p=1.0) if mean and std else A.NoOp(),
+            A.Normalize(mean=mean, std=std, max_pixel_value=max_pixel_value, p=1.0)
+            if mean and std
+            else A.NoOp(),
             # Scale (+-10%) and rotation (+-10 degrees)
             A.ShiftScaleRotate(shift_limit=0, scale_limit=0.1, rotate_limit=10, p=0.5),
             # Mask dropout
@@ -64,7 +67,9 @@ def get_val_augmentation_pipeline(image_size=None, max_pixel_value=1, mean=None,
     transform = A.Compose(
         [
             A.Resize(image_size[0], image_size[1]) if image_size is not None else A.NoOp(),
-            A.Normalize(mean=mean, std=std, max_pixel_value=max_pixel_value, p=1.0) if mean and std else A.NoOp(),
+            A.Normalize(mean=mean, std=std, max_pixel_value=max_pixel_value, p=1.0)
+            if mean and std
+            else A.NoOp(),
             ToTensorV2(),
         ],
         additional_targets={"post_image": "image", "post_mask": "mask"},
@@ -72,7 +77,7 @@ def get_val_augmentation_pipeline(image_size=None, max_pixel_value=1, mean=None,
     return transform
 
 
-###### AutoEncoder Augmentation Pipeline #######
+# AutoEncoder Augmentation Pipeline #
 def get_train_autoencoder_augmentation_pipeline(image_size=None):
     return A.Compose(
         [
@@ -83,7 +88,9 @@ def get_train_autoencoder_augmentation_pipeline(image_size=None):
             A.ShiftScaleRotate(
                 shift_limit=0.1, scale_limit=0.1, rotate_limit=15, p=0.5, border_mode=0
             ),  # Random shift, scale, and rotation with fill at borders
-            A.ColorJitter(brightness=0.2, contrast=0.2, saturation=0.2, hue=0.1, p=0.5),  # Adjust color properties
+            A.ColorJitter(
+                brightness=0.2, contrast=0.2, saturation=0.2, hue=0.1, p=0.5
+            ),  # Adjust color properties
             A.RandomBrightnessContrast(
                 brightness_limit=0.3, contrast_limit=0.3, p=0.5
             ),  # Adjust brightness and contrast

@@ -1,8 +1,9 @@
-from typing import Optional, List
+from typing import List, Optional
 
 import torch
 import torch.nn.functional as F
 from torch.nn.modules.loss import _Loss
+
 from ._functional import soft_jaccard_score, to_tensor
 from .constants import BINARY_MODE, MULTICLASS_MODE, MULTILABEL_MODE
 
@@ -39,7 +40,7 @@ class JaccardLoss(_Loss):
             https://github.com/BloodAxe/pytorch-toolbelt
         """
         assert mode in {BINARY_MODE, MULTILABEL_MODE, MULTICLASS_MODE}
-        super(JaccardLoss, self).__init__()
+        super().__init__()
 
         self.mode = mode
         if classes is not None:

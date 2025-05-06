@@ -1,15 +1,15 @@
-import torch
-from torch.utils.data import Dataset, DataLoader
-import torch.nn as nn
-from torch.nn import MSELoss
-from torch.amp import autocast, GradScaler
-from torch.optim import Adam
-from torch.utils.tensorboard import SummaryWriter
-
-from tqdm import tqdm
-from datetime import datetime
 import os
+from datetime import datetime
+
 import numpy as np
+import torch
+import torch.nn as nn
+from torch.amp import GradScaler, autocast
+from torch.nn import MSELoss
+from torch.optim import Adam
+from torch.utils.data import DataLoader, Dataset
+from torch.utils.tensorboard import SummaryWriter
+from tqdm import tqdm
 
 __all__ = ["train", "find_threshold"]
 
@@ -154,7 +154,9 @@ def train(
                     val_loss += loss.item()
             val_loss /= len(val_loader)
             writer.add_scalar("Loss/Validation", val_loss, epoch)
-            print(f"Epoch {epoch + 1}/{num_epochs}, Train Loss: {train_loss:.4f} / Validation Loss: {val_loss:.4f}")
+            print(
+                f"Epoch {epoch + 1}/{num_epochs}, Train Loss: {train_loss:.4f} / Validation Loss: {val_loss:.4f}"
+            )
 
             # Save the best model
             if save_best_model and val_loss < best_val_loss:
@@ -170,7 +172,9 @@ def train(
 
     # Final logging
     writer.close()
-    print(f"Training complete. Logs saved to: {log_dir} and best model saved at : {best_model_path}")
+    print(
+        f"Training complete. Logs saved to: {log_dir} and best model saved at : {best_model_path}"
+    )
 
     return best_model_path
 
@@ -199,7 +203,7 @@ def find_threshold(model, data, loss_fn, device, confidence_interval=0.95):
     all_losses = []  # To store all the individual losses
 
     with torch.no_grad():
-        with tqdm(data_loader, desc=f"Threshold Computation", unit="batch") as t:
+        with tqdm(data_loader, desc="Threshold Computation", unit="batch") as t:
             for batch in t:
                 inputs = batch["image"].to(device)
                 outputs = model(inputs)

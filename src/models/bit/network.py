@@ -2,8 +2,15 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from einops import rearrange
-from torchvision.models import resnet18, resnet34, resnet50
-from torchvision.models import ResNet18_Weights, ResNet34_Weights, ResNet50_Weights
+from torchvision.models import (
+    ResNet18_Weights,
+    ResNet34_Weights,
+    ResNet50_Weights,
+    resnet18,
+    resnet34,
+    resnet50,
+)
+
 from .help_funcs import Transformer, TransformerDecoder, TwoLayerConv2d
 
 
@@ -117,7 +124,9 @@ class BiT(nn.Module):
         self.with_decoder_pos = with_decoder_pos
         if self.with_decoder_pos == "learned":
             decoder_pos_size = 256 // 4
-            self.pos_embedding_decoder = nn.Parameter(torch.randn(1, dim, decoder_pos_size, decoder_pos_size))
+            self.pos_embedding_decoder = nn.Parameter(
+                torch.randn(1, dim, decoder_pos_size, decoder_pos_size)
+            )
 
         # Transformer layers
         self.transformer = Transformer(
@@ -144,7 +153,9 @@ class BiT(nn.Module):
     def _forward_tokens(self, x):
         if self.tokenizer:
             b, c, h, w = x.shape
-            spatial_attention = torch.softmax(self.conv_a(x).flatten(2), dim=-1)  # B, token_len, H*W
+            spatial_attention = torch.softmax(
+                self.conv_a(x).flatten(2), dim=-1
+            )  # B, token_len, H*W
             return torch.einsum("b t n, b c n -> b t c", spatial_attention, x.flatten(2))
         else:
             if self.pool_mode == "max":

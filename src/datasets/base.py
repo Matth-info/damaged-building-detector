@@ -1,9 +1,9 @@
-from typing import List, Dict, Optional
 from pathlib import Path
+from typing import Dict, List, Optional
 
-from torch.utils.data import Dataset
-import torch
 import albumentations as A
+import torch
+from torch.utils.data import Dataset
 
 
 class Building_Dataset(Dataset):

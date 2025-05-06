@@ -1,14 +1,15 @@
 #  pytest .\test_dataset_loading.py -v
 import pytest
+
 from src.datasets import (
     Cloud_DrivenData_Dataset,
-    Puerto_Rico_Building_Dataset,
+    Dataset_Inference,
+    Levir_cd_dataset,
     OpenCities_Building_Dataset,
+    Puerto_Rico_Building_Dataset,
     xDB_Damaged_Building,
     xDB_Instance_Building,
     xDB_Siamese_Dataset,
-    Levir_cd_dataset,
-    Dataset_Inference,
 )
 
 data_folder_path = ".../data/data_samples"
@@ -52,11 +53,19 @@ def test_load_standard_datasets(dataset_cls, kwargs, expected_shapes):
 
     if isinstance(sample, dict):  # Some datasets return dict with images/masks
         image_shape, mask_shape = expected_shapes
-        assert "image" in sample and "mask" in sample, f"{dataset_cls.__name__} sample structure incorrect!"
-        assert sample["image"].shape == image_shape, f"Expected shape {image_shape}, but got {sample['image'].shape}"
-        assert sample["mask"].shape == mask_shape, f"Expected shape {mask_shape}, but got {sample['mask'].shape}"
+        assert (
+            "image" in sample and "mask" in sample
+        ), f"{dataset_cls.__name__} sample structure incorrect!"
+        assert (
+            sample["image"].shape == image_shape
+        ), f"Expected shape {image_shape}, but got {sample['image'].shape}"
+        assert (
+            sample["mask"].shape == mask_shape
+        ), f"Expected shape {mask_shape}, but got {sample['mask'].shape}"
     else:
-        assert sample.shape == expected_shapes[0], f"Expected shape {expected_shapes[0]}, but got {sample.shape}"
+        assert (
+            sample.shape == expected_shapes[0]
+        ), f"Expected shape {expected_shapes[0]}, but got {sample.shape}"
 
 
 # siamese dataset
@@ -138,4 +147,6 @@ def test_load_siamese_datasets(dataset_cls, kwargs, expected_shapes):
             sample["post_mask"].shape == mask_shape
         ), f"Expected shape {mask_shape}, but got {sample['post_mask'].shape}"
     if "mask" in sample.keys():
-        assert sample["mask"].shape == mask_shape, f"Expected shape {mask_shape}, but got {sample['mask'].shape}"
+        assert (
+            sample["mask"].shape == mask_shape
+        ), f"Expected shape {mask_shape}, but got {sample['mask'].shape}"

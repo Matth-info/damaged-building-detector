@@ -1,10 +1,10 @@
-from typing import List, Callable
+from typing import Callable, List
 
+import albumentations as A
 import numpy as np
 import torch
 import torch.nn as nn
 from albumentations.pytorch import ToTensorV2
-import albumentations as A
 
 
 def reverse_augmentation(predictions: np.array, augmentation: A.VerticalFlip | A.HorizontalFlip):
@@ -56,13 +56,21 @@ def augmentation_test_time(
 
         # Apply each augmentation and get predictions
         for aug in list_augmentations:
-            augmented_inputs = [aug(image=x.transpose(1, 2, 0))["image"] for x in inputs.cpu().numpy()]
-            augmented_inputs = torch.stack([ToTensorV2()(image=x)["image"] for x in augmented_inputs]).to(device)
+            augmented_inputs = [
+                aug(image=x.transpose(1, 2, 0))["image"] for x in inputs.cpu().numpy()
+            ]
+            augmented_inputs = torch.stack(
+                [ToTensorV2()(image=x)["image"] for x in augmented_inputs]
+            ).to(device)
 
-            predictions = model(augmented_inputs)  # Forward pass for predictions (e.g., logits or masks)
+            predictions = model(
+                augmented_inputs
+            )  # Forward pass for predictions (e.g., logits or masks)
 
             # Reverse augmentation
-            predictions = np.array([reverse_augmentation(pred.cpu().numpy(), aug) for pred in predictions])
+            predictions = np.array(
+                [reverse_augmentation(pred.cpu().numpy(), aug) for pred in predictions]
+            )
             batch_predictions.append(predictions)
 
         # add not augmented prediction
@@ -70,7 +78,9 @@ def augmentation_test_time(
         batch_predictions.append(preds)
 
         # Aggregate predictions for this batch
-        batch_predictions = np.array(batch_predictions)  # Shape: [num_augmentations, batch_size, H, W]
+        batch_predictions = np.array(
+            batch_predictions
+        )  # Shape: [num_augmentations, batch_size, H, W]
 
         if aggregation == "mean":
             aggregated = np.mean(batch_predictions, axis=0)
@@ -114,18 +124,26 @@ def augmentation_test_time_siamese(
         for aug in list_augmentations:
             # Augment both images
             augmented_inputs_1 = torch.stack(
-                [ToTensorV2()(image=aug(image=x.transpose(1, 2, 0))["image"])["image"] for x in inputs_1.cpu().numpy()]
+                [
+                    ToTensorV2()(image=aug(image=x.transpose(1, 2, 0))["image"])["image"]
+                    for x in inputs_1.cpu().numpy()
+                ]
             ).to(device)
 
             augmented_inputs_2 = torch.stack(
-                [ToTensorV2()(image=aug(image=x.transpose(1, 2, 0))["image"])["image"] for x in inputs_2.cpu().numpy()]
+                [
+                    ToTensorV2()(image=aug(image=x.transpose(1, 2, 0))["image"])["image"]
+                    for x in inputs_2.cpu().numpy()
+                ]
             ).to(device)
 
             # Forward pass for predictions
             predictions = model(augmented_inputs_1, augmented_inputs_2)  # Siamese forward pass
 
             # Reverse augmentation
-            reversed_predictions = np.array([reverse_augmentation(pred.cpu().numpy(), aug) for pred in predictions])
+            reversed_predictions = np.array(
+                [reverse_augmentation(pred.cpu().numpy(), aug) for pred in predictions]
+            )
             batch_predictions.append(reversed_predictions)
 
         # Add non-augmented predictions
@@ -133,7 +151,9 @@ def augmentation_test_time_siamese(
         batch_predictions.append(preds)
 
         # Aggregate predictions for this batch
-        batch_predictions = np.array(batch_predictions)  # Shape: [num_augmentations, batch_size, H, W]
+        batch_predictions = np.array(
+            batch_predictions
+        )  # Shape: [num_augmentations, batch_size, H, W]
 
         if aggregation == "mean":
             aggregated = np.mean(batch_predictions, axis=0)

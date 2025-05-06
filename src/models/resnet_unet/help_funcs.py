@@ -2,12 +2,12 @@
 import torch
 import torch.nn as nn
 from torchvision.models import (
-    resnet18,
-    resnet34,
-    resnet50,
     ResNet18_Weights,
     ResNet34_Weights,
     ResNet50_Weights,
+    resnet18,
+    resnet34,
+    resnet50,
 )
 
 

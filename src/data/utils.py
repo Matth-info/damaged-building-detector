@@ -1,16 +1,16 @@
 import os
-from typing import List, Tuple, Optional
-from concurrent.futures import ThreadPoolExecutor
-from tqdm import tqdm
 import re
-from PIL import Image
+from concurrent.futures import ThreadPoolExecutor
+from typing import List, Optional, Tuple
 
-import torch
 import numpy as np
 import rasterio
 import shapely
+import torch
+from PIL import Image
 from rasterio.features import shapes
 from rasterio.warp import transform_geom
+from tqdm import tqdm
 
 
 def renormalize_image(
@@ -46,7 +46,7 @@ def renormalize_image(
         raise TypeError("Input should be a torch.Tensor or a np.ndarray")
 
 
-#### Manipulate TIF images
+# Manipulate TIF images
 def extract_title_ij(filename: str) -> Tuple[int, int]:
     pattern = r"tile_(\d+)_(\d+).tif"
     match = re.search(pattern, filename)
@@ -70,11 +70,13 @@ def read_tiff_rasterio(file_path, bands: list = [1, 2, 3], with_profile: bool = 
 
 
 def save_rasterGeoTiff(data, output_file, profile):
+    """Save GeoTiff images"""
     with rasterio.open(output_file, "w", **profile) as dst:
         dst.write(data)
 
 
 def save_numpy_rasterGeoTiff(data: np.ndarray, output_file, profile):
+    """Save Numpy array as GeoTiff Images"""
     # Transpose Numpy array
     # GeoTiff expect (bands, height, width) not (height, width,  bands)
     data = np.moveaxis(data, -1, 0)

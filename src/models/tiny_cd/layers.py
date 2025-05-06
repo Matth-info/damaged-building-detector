@@ -1,15 +1,7 @@
 from typing import List, Optional
 
 from torch import Tensor, reshape, stack
-from torch.nn import (
-    Conv2d,
-    InstanceNorm2d,
-    Module,
-    PReLU,
-    Sequential,
-    Upsample,
-    Module,
-)
+from torch.nn import Conv2d, InstanceNorm2d, Module, PReLU, Sequential, Upsample
 
 
 class PixelwiseLinear(Module):
@@ -89,16 +81,16 @@ class UpMask(Module):
     def __init__(
         self,
         scale_factor: float,
-        nin: int,
+        n_in: int,
         nout: int,
     ):
         super().__init__()
         self._upsample = Upsample(scale_factor=scale_factor, mode="bilinear", align_corners=True)
         self._convolution = Sequential(
-            Conv2d(nin, nin, 3, 1, groups=nin, padding=1),
+            Conv2d(n_in, n_in, 3, 1, groups=n_in, padding=1),
             PReLU(),
-            InstanceNorm2d(nin),
-            Conv2d(nin, nout, kernel_size=1, stride=1),
+            InstanceNorm2d(n_in),
+            Conv2d(n_in, nout, kernel_size=1, stride=1),
             PReLU(),
             InstanceNorm2d(nout),
         )

@@ -1,9 +1,10 @@
+import logging
 import os
 from pathlib import Path
+
 import rasterio
 from rasterio.windows import Window
 from tqdm import tqdm
-import logging
 
 from src.data.utils import save_rasterGeoTiff
 
@@ -109,7 +110,9 @@ def process_tile(i, j, grid_x, grid_y, src_profile, input_file, output_dir):
         save_rasterGeoTiff(tile_data, output_file, tile_profile)
 
 
-def generate_tiles_parallel(input_file: str, output_dir: str, grid_x: int, grid_y: int, max_workers=4):
+def generate_tiles_parallel(
+    input_file: str, output_dir: str, grid_x: int, grid_y: int, max_workers=4
+):
     subfolder_name = Path(input_file).stem
     output_dir = os.path.join(output_dir, subfolder_name)
     os.makedirs(output_dir, exist_ok=True)
@@ -129,7 +132,9 @@ def generate_tiles_parallel(input_file: str, output_dir: str, grid_x: int, grid_
         list(
             tqdm(
                 executor.map(
-                    lambda ij: process_tile(*ij, grid_x, grid_y, profile, input_file=input_file, output_dir=output_dir),
+                    lambda ij: process_tile(
+                        *ij, grid_x, grid_y, profile, input_file=input_file, output_dir=output_dir
+                    ),
                     tasks,
                 ),
                 total=len(tasks),

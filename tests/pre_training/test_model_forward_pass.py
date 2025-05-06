@@ -3,7 +3,7 @@
 import pytest
 import torch
 
-from src.models import ResNet_UNET, TinyCD, SiameseResNetUNet, BiT, ChangeFormer
+from src.models import BiT, ChangeFormer, ResNet_UNET, SiameseResNetUNet, TinyCD
 
 
 @pytest.mark.parametrize(

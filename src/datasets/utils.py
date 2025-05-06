@@ -1,9 +1,9 @@
 # Utils files for Dataset definitions
+from pathlib import Path
+
 import torch
 from PIL import Image
-from pathlib import Path
 from tqdm import tqdm
-
 
 __all__ = [
     "custom_collate_fn",
@@ -115,5 +115,5 @@ def split_and_save_images(
                         crop_counter += 1
 
     print(
-        f"{image_counter} images ({width},{height}) have been created into {crop_counter} patches of size ({patch_size}, {patch_size}) and saved at {output_dir}"
+        f"{image_counter} images ({width}, {height}) have been created into {crop_counter} patches of size ({patch_size}, {patch_size}) and saved at {output_dir}"
     )

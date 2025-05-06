@@ -1,12 +1,11 @@
-import pytest
-
 import cv2
 import numpy as np
+import pytest
 import torch
 import torch.nn as nn
 import torch.optim as optim
 
-from src.models import ResNet_UNET, TinyCD, SiameseResNetUNet, BiT, ChangeFormer
+from src.models import BiT, ChangeFormer, ResNet_UNET, SiameseResNetUNet, TinyCD
 
 
 def draw_circle_with_label(image_size=224, radius=50, center=None):
@@ -37,7 +36,9 @@ def draw_circle_with_label(image_size=224, radius=50, center=None):
     label = (grayscale_image > 0).astype(np.uint8)  # Circle footprint
 
     # Convert to torch tensors and normalize image
-    image_tensor = torch.tensor(image, dtype=torch.float32).permute(2, 0, 1).unsqueeze(0) / 255.0  # (1, 3, H, W)
+    image_tensor = (
+        torch.tensor(image, dtype=torch.float32).permute(2, 0, 1).unsqueeze(0) / 255.0
+    )  # (1, 3, H, W)
     label_tensor = torch.tensor(label, dtype=torch.long).unsqueeze(0)  # (1, H, W)
 
     return image_tensor, label_tensor
@@ -89,7 +90,9 @@ def test_model_overfit_on_single_sample(model_class, kwargs):
     # Generate a single sample and label
     input_shape = (1, 3, 224, 224)
 
-    inputs, target = draw_circle_with_label(image_size=input_shape[-1], radius=int(input_shape[-1] / 4), center=None)
+    inputs, target = draw_circle_with_label(
+        image_size=input_shape[-1], radius=int(input_shape[-1] / 4), center=None
+    )
 
     # Send inputs, targets and criterion to device
     inputs, target = inputs.to(device), target.to(device)

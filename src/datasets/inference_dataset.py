@@ -1,14 +1,14 @@
-from typing import Optional, Dict
-from PIL import Image
 from pathlib import Path
-import torch
-from torch.utils.data import Dataset
-import numpy as np
+from typing import Dict, Optional
 
+import numpy as np
+import torch
+from PIL import Image
+from torch.utils.data import Dataset
 
 from src.augmentation import Augmentation_pipeline
-from src.datasets.base import Segmentation_Dataset
 from src.data.utils import read_tiff_rasterio
+from src.datasets.base import Segmentation_Dataset
 
 
 class Dataset_Inference_Siamese(Segmentation_Dataset):
@@ -51,9 +51,9 @@ class Dataset_Inference_Siamese(Segmentation_Dataset):
         self.image_filenames = self._filter_filenames()
 
     def _filter_filenames(self):
-        pre_files = set(f.stem for f in self.pre_disaster_dir.glob(f"*.{self.extension}"))
+        pre_files = {f.stem for f in self.pre_disaster_dir.glob(f"*.{self.extension}")}
         if self.post_disaster_dir:
-            post_files = set(f.stem for f in self.post_disaster_dir.glob(f"*.{self.extension}"))
+            post_files = {f.stem for f in self.post_disaster_dir.glob(f"*.{self.extension}")}
             return sorted(pre_files & post_files)
         return sorted(pre_files)
 
@@ -85,7 +85,12 @@ class Dataset_Inference_Siamese(Segmentation_Dataset):
             pre_image = torch.tensor(pre_image, dtype=torch.float32).permute(2, 0, 1)
             post_image = torch.tensor(post_image, dtype=torch.float32).permute(2, 0, 1)
 
-        return {"pre_image": pre_image, "post_image": post_image, "filename": filename, "profile": dict(profile)}
+        return {
+            "pre_image": pre_image,
+            "post_image": post_image,
+            "filename": filename,
+            "profile": dict(profile),
+        }
 
 
 class Dataset_Inference(Segmentation_Dataset):
@@ -108,7 +113,12 @@ class Dataset_Inference(Segmentation_Dataset):
             "profile" (dict): Rasterio profile metadata.
     """
 
-    def __init__(self, origin_dir: str, transform: Optional[Augmentation_pipeline] = None, extension: str = "tif"):
+    def __init__(
+        self,
+        origin_dir: str,
+        transform: Optional[Augmentation_pipeline] = None,
+        extension: str = "tif",
+    ):
         super().__init__(origin_dir=origin_dir, type="infer", transform=transform)
         self.extension = extension.lower()
         self.image_dir = Path(self.origin_dir)
