@@ -8,6 +8,8 @@ from typing import Callable, Dict, List, Optional, Tuple
 
 import albumentations as A
 import mlflow
+
+# Do Not Forget to start your (local) MLFlow server (ex : mlflow server --host 127.0.0.1 --port 8080)
 import numpy as np
 import torch
 import torch.nn as nn
@@ -17,27 +19,46 @@ import yaml
 from torch.amp import GradScaler, autocast
 from torch.nn.modules.loss import _Loss
 from torch.utils.data import DataLoader
+from torchinfo import summary
 from tqdm import tqdm
 
+import src.training.mlflow_utils as mlflow_utils
 from src.augmentation import augmentation_test_time, augmentation_test_time_siamese
 from src.metrics import compute_model_class_performance, get_stats
-
-from .utils import (
-    custom_infer_signature,
+from src.training.utils import (
     display_metrics,
     initialize_optimizer_scheduler,
     load_checkpoint,
-    load_model,
-    log_images_to_mlflow,
-    log_loss,
-    log_metrics,
-    log_model,
     save_checkpoint,
-    save_model,
 )
+from src.utils.visualization import COLOR_DICT, DEFAULT_MAPPING
 
 
 class Trainer:
+    """
+    Trainer Module
+
+    This module provides a `Trainer` class to standardize and simplify the training, validation, and testing of PyTorch models.
+    Inspired by PyTorch Lightning and Hugging Face's Trainer, it encapsulates common training workflows, including mixed precision
+    training, gradient accumulation, learning rate scheduling, and early stopping.
+
+    Key Features:
+    - **Training and Validation**: Supports training and validation loops with customizable loss functions and metrics.
+    - **Testing**: Includes a testing phase to evaluate the model on unseen data.
+    - **Mixed Precision Training**: Supports mixed precision training using PyTorch's `torch.amp` module.
+    - **Gradient Accumulation**: Allows training with gradient accumulation for large batch sizes.
+    - **Learning Rate Scheduling**: Integrates learning rate schedulers for dynamic learning rate adjustments.
+    - **Early Stopping**: Implements early stopping to terminate training when validation performance stops improving.
+    - **Siamese Architectures**: Supports Siamese networks for tasks requiring paired inputs (e.g., change detection).
+    - **Test-Time Augmentation (TTA)**: Includes test-time augmentation for improved evaluation performance.
+    - **Logging and Checkpointing**: Logs metrics and saves model checkpoints during training and validation.
+    - **MLFlow Integration**: Logs hyperparameters, metrics, and artifacts to MLFlow for experiment tracking.
+
+    Classes:
+        - Trainer: Encapsulates the training, validation, and testing workflows for PyTorch models.
+
+    """
+
     def __init__(
         self,
         model: nn.Module,
@@ -70,6 +91,9 @@ class Trainer:
         class_names: List[str] = None,
         siamese: bool = False,
         tta: bool = False,
+        tracking_uri: str = "http://127.0.0.1:8080",
+        enable_system_metrics: bool = False,
+        task: str = "semantic segmentation",
     ):
         self.model = model.to(device)
         self.train_dl = train_dl
@@ -113,7 +137,9 @@ class Trainer:
         self.mode = "multiclass"
         self.max_norm = 1.0
         self.gradient_accumulation_steps = 1
-        self.track_system_metrics = False
+        self.track_system_metrics = enable_system_metrics
+        self.tracking_uri = tracking_uri
+        self.task = task
 
         # initialize a local loss tracking
         self.history = {"train_loss": [], "val_loss": []}
@@ -217,10 +243,10 @@ class Trainer:
             # Mixed precision support
             if self.is_mixed_precision:
                 with autocast(device_type=self.device, dtype=torch.float16):
-                    outputs = self._apply_tta_or_forward(x1, x2, x, self.tta, self.siamese)
+                    outputs = self.model(x1, x2) if self.siamese else self.model(x)
                     vloss = self.loss_fn(outputs, y)
             else:
-                outputs = self._apply_tta_or_forward(x1, x2, x, self.tta, self.siamese)
+                outputs = self.model(x1, x2) if self.siamese else self.model(x)
                 vloss = self.loss_fn(outputs, y)
 
         vloss_value = vloss.item()
@@ -246,7 +272,54 @@ class Trainer:
 
         return vloss_value, metrics_step
 
-    def _apply_tta_or_forward(self, x1, x2, x, tta, siamese):
+    def testing_step(self, batch: dict) -> Tuple[float, Dict[str, float]]:
+        """
+        Perform a single validation step on a batch of data.
+        """
+        if self.siamese:
+            x1 = batch["pre_image"].to(self.device, non_blocking=True, dtype=torch.float32)
+            x2 = batch["post_image"].to(self.device, non_blocking=True, dtype=torch.float32)
+        else:
+            x1 = batch[self.image_key].to(self.device, non_blocking=True, dtype=torch.float32)
+            x2 = None
+
+        y = batch[self.mask_key].to(self.device, non_blocking=True, dtype=torch.int64)
+
+        # Disable gradients for validation
+        with torch.no_grad():
+            # Mixed precision support
+            if self.is_mixed_precision:
+                with autocast(device_type=self.device, dtype=torch.float16):
+                    outputs = self._apply_tta_or_forward(x1, x2, self.tta, self.siamese)
+                    tloss = self.loss_fn(outputs, y)
+            else:
+                outputs = self._apply_tta_or_forward(x1, x2, self.tta, self.siamese)
+                tloss = self.loss_fn(outputs, y)
+
+        tloss_value = tloss.item()
+
+        # Compute metrics
+        test_metrics_step = {}
+        with torch.no_grad():
+            preds = outputs.argmax(dim=1).long() if len(outputs.shape) == 4 else outputs.long()
+            tp, fp, fn, tn = get_stats(
+                output=preds, target=y, mode=self.mode, num_classes=self.num_classes
+            )
+
+            for metric in self.metrics:
+                metric_name = metric.__name__
+                test_metrics_step[metric_name] = metric(
+                    tp,
+                    fp,
+                    fn,
+                    tn,
+                    class_weights=self.class_weights,
+                    reduction=self.reduction,
+                )
+
+        return tloss_value, test_metrics_step
+
+    def _apply_tta_or_forward(self, x1, x2=None, tta=False, siamese=False):
         """Helper function to handle TTA and forward pass"""
         if tta:
             if siamese:
@@ -260,12 +333,12 @@ class Trainer:
                 )
             return augmentation_test_time(
                 model=self.model,
-                images=x,
+                images=x1,
                 list_augmentations=[A.HorizontalFlip(p=1.0), A.VerticalFlip(p=1.0)],
                 aggregation="mean",
                 device=self.device,
             )
-        return self.model(x1, x2) if siamese else self.model(x)
+        return self.model(x1, x2) if siamese else self.model(x1)
 
     def training_epoch(self, epoch) -> Tuple[float, Dict[str, float]]:
         """
@@ -278,14 +351,14 @@ class Trainer:
         running_loss = 0.0
         total_metrics = {metric.__name__: 0.0 for metric in self.metrics}
         interval_samples = 0
-        steps_per_epoch = math.ceil(len(self.train_loader.dataset) / self.train_loader.batch_size)
+        steps_per_epoch = math.ceil(len(self.train_dl.dataset) / self.train_dl.batch_size)
         step = 0
 
-        with tqdm(self.train_loader, desc=f"Epoch {epoch + 1}", unit="batch") as t:
-            for batch in t:
-                loss_t, metrics_step = self.training_step(batch=batch)
+        with tqdm(self.train_dl, desc=f"Epoch {epoch + 1}", unit="batch") as t:
+            for i, batch in enumerate(t):
+                loss_t, metrics_step = self.training_step(batch=batch, step_number=i)
 
-                batch_size = batch[self.image_key].size(0)
+                batch_size = batch["pre_image" if self.siamese else self.image_key].size(0)
                 running_loss += loss_t * batch_size
                 interval_samples += batch_size
 
@@ -299,8 +372,10 @@ class Trainer:
                         for name, value in total_metrics.items()
                     }
                     step_number = epoch * steps_per_epoch + step
-                    log_metrics(metrics=step_metrics, step_number=step_number, phase="Training")
-                    log_loss(
+                    mlflow_utils.log_metrics(
+                        metrics=step_metrics, step_number=step_number, phase="Training"
+                    )
+                    mlflow_utils.log_loss(
                         loss_value=running_loss / max(1, interval_samples),
                         step_number=step_number,
                         phase="Training",
@@ -309,9 +384,9 @@ class Trainer:
                 t.set_postfix({"Loss": loss_t})
                 step += 1
 
-        epoch_loss = running_loss / len(self.train_loader.dataset)
+        epoch_loss = running_loss / len(self.train_dl.dataset)
         epoch_metrics = {
-            name: value / len(self.train_loader.dataset) for name, value in total_metrics.items()
+            name: value / len(self.train_dl.dataset) for name, value in total_metrics.items()
         }
 
         if self.verbose:
@@ -339,13 +414,13 @@ class Trainer:
         running_loss = 0.0
         interval_samples = 0
         total_metrics = {metric.__name__: 0.0 for metric in self.metrics}
-        steps_per_epoch = math.ceil(len(self.val_loader.dataset) / self.val_loader.batch_size)
+        steps_per_epoch = math.ceil(len(self.valid_dl.dataset) / self.valid_dl.batch_size)
         step = 0
 
         with torch.no_grad():
-            with tqdm(self.val_loader, desc=f"Validation Epoch {epoch + 1}", unit="batch") as t:
+            with tqdm(self.valid_dl, desc=f"Validation Epoch {epoch + 1}", unit="batch") as t:
                 for batch in t:
-                    batch_size = batch[self.image_key].size(0)
+                    batch_size = batch["pre_image" if self.siamese else self.image_key].size(0)
 
                     vloss, metrics_step = self.validation_step(batch=batch)
 
@@ -362,12 +437,12 @@ class Trainer:
                             for name, value in total_metrics.items()
                         }
                         step_number = epoch * steps_per_epoch + step
-                        log_metrics(
+                        mlflow_utils.log_metrics(
                             metrics=step_metrics,
                             step_number=step_number,
                             phase="Validation",
                         )
-                        log_loss(
+                        mlflow_utils.log_loss(
                             loss_value=running_loss / max(1, interval_samples),
                             step_number=step_number,
                             phase="Validation",
@@ -376,9 +451,9 @@ class Trainer:
                     t.set_postfix({"Loss": vloss})
                     step += 1
 
-        epoch_vloss = running_loss / len(self.val_loader.dataset)
+        epoch_vloss = running_loss / len(self.valid_dl.dataset)
         epoch_metrics = {
-            name: total / len(self.val_loader.dataset) for name, total in total_metrics.items()
+            name: total / len(self.valid_dl.dataset) for name, total in total_metrics.items()
         }
 
         if self.verbose:
@@ -428,127 +503,6 @@ class Trainer:
         if epoch % self.checkpoint_interval == 0:
             save_checkpoint(epoch, self.model, self.optimizer, self.scheduler, "./checkpoints")
 
-    def train(self):
-        """Main training loop."""
-
-        # Connect MLFlow session to the local server
-        mlflow.set_tracking_uri("http: //localhost: 5000")
-        # Set Experiment name
-        mlflow.set_experiment(self.experiment_name)
-
-        if self.track_system_metrics:
-            mlflow.enable_system_metrics_logging()  # track system performance
-
-        # Create a directory for the experiment
-        timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
-        run_name = f"{self.experiment_name}_{timestamp}"
-
-        logging.info(f"Starting training for {self.nb_epochs} epochs.")
-        overall_start_time = time.time()
-
-        with mlflow.start_run() as run:
-            mlflow.set_tag("mlflow.runName", run_name)
-            mlflow.log_params(self.get_hyperparameters())
-            logging.info("Hyperparameters have been logged")
-
-            # Training / Validation phases
-            for epoch in range(self.start_epoch, self.nb_epochs):
-                start_time = time.time()
-                logging.info(f"Epoch {epoch + 1}/{self.nb_epochs}")
-
-                # Training Step
-                train_loss, train_metrics = self.training_epoch(epoch)
-
-                # Validation Step
-                val_loss, val_metrics = self.validation_epoch(epoch)
-
-                if self.track_system_metrics:
-                    self.track_system_metrics = False
-                    mlflow.disable_system_metrics_logging()
-
-                # Update Learning Rate
-                if self.scheduler:
-                    mlflow.log_metric(
-                        "learning_rate", self.lr_scheduler.get_last_lr()[0], step=epoch
-                    )
-                    self.scheduler.step()
-
-                # Save best model & checkpoint
-                self.handle_checkpointing(epoch, val_loss)
-
-                # Log training and validation metrics
-                steps_per_epoch = math.ceil(len(self.valid_dl.dataset) / self.valid_dl.batch_size)
-                step_number = (epoch + 1) * steps_per_epoch
-                log_metrics(metrics=train_metrics, step_number=step_number, phase="Training")
-                log_metrics(metrics=val_metrics, step_number=step_number, phase="Validation")
-
-                # Log sample images after validation epoch
-                log_images_to_mlflow(
-                    model=self.model,
-                    data_loader=self.valid_dl,
-                    epoch=epoch,
-                    device=self.device,
-                    max_images=4,
-                    image_key=self.image_key,
-                    mask_key=self.mask_key,
-                    siamese=self.siamese,
-                    color_dict={
-                        0: (0, 0, 0),  # Transparent background for class 0
-                        1: (0, 255, 0),  # Green with some transparency for "no-damage"
-                        2: (
-                            255,
-                            255,
-                            0,
-                        ),  # Yellow with some transparency for "minor-damage"
-                        3: (
-                            255,
-                            126,
-                            0,
-                        ),  # Orange with some transparency for "major-damage"
-                        4: (255, 0, 0),  # Red with some transparency for "destroyed"
-                    },
-                    log_dir="../runs/mlflow_logs",
-                )
-
-                # Logging epoch duration
-                epoch_time = time.time() - start_time
-                mlflow.log_metric("epoch_time", epoch_time, step=epoch)
-                logging.info(f"Epoch {epoch + 1} completed in {epoch_time:.2f}s")
-
-                if self.verbose and self.debug:
-                    logging.info(f"Epoch {epoch + 1} took {epoch_time:.2f} seconds")
-                    if torch.cuda.is_available():
-                        logging.info(
-                            f"GPU memory allocated: {torch.cuda.memory_allocated() / 1024**3:.2f} GB"
-                        )
-
-                # Early stopping
-                if self.trigger_times >= self.patience:
-                    logging.info("Early stopping triggered. Training stopped.")
-                    break
-
-        logging.info(f"Total training time: {time.time() - overall_start_time:.2f}s")
-
-        # Final Testing
-        if self.test_dl:
-            epoch_tloss, test_metrics = self.testing()
-            log_metrics(test_metrics, step_number=None, phase="Testing")
-
-            # Testing phase
-            compute_model_class_performance(
-                model=self.model,
-                dataloader=self.test_dl,
-                num_classes=self.num_classes,
-                device=self.device,
-                class_names=self.class_names,
-                siamese=self.siamese,
-                image_key=self.image_key,
-                mask_key=self.mask_key,
-                average_mode="macro",
-                mlflow_bool=True,
-            )
-
-    @classmethod
     def testing(
         self,
     ) -> Tuple[float, Dict[str, float]]:
@@ -561,14 +515,10 @@ class Trainer:
         # Iterate through the test dataset
         with tqdm(self.test_dl, desc="Testing", unit="batch") as t:
             for batch in t:
-                batch_size = (
-                    batch[self.image_key].size(0)
-                    if self.siamese
-                    else batch[self.image_key].size(0)
-                )
+                batch_size = batch["pre_image" if self.siamese else self.image_key].size(0)
 
                 # Perform a validation step
-                tloss, metrics_step = self.validation_step(batch=batch)
+                tloss, metrics_step = self.testing_step(batch=batch)
 
                 # Accumulate test loss
                 running_loss += tloss * batch_size
@@ -589,3 +539,133 @@ class Trainer:
         }
 
         return epoch_tloss, test_metrics
+
+    def train(self):
+        """Main training loop."""
+
+        # Connect MLFlow session to the local server
+        mlflow.set_tracking_uri(self.tracking_uri)
+        # Set Experiment name
+        mlflow.set_experiment(self.experiment_name)
+        mlflow.set_tag("task", self.task)
+        mlflow.set_tag("torch_version", torch.__version__)
+        mlflow.set_tag("mlflow_version", mlflow.__version__)
+
+        if self.track_system_metrics:
+            mlflow.enable_system_metrics_logging()  # track system performance
+
+        # Create a directory for the experiment
+        timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+        run_name = f"{self.experiment_name}_{timestamp}"
+
+        logging.info(f"Starting training for {self.nb_epochs} epochs.")
+        overall_start_time = time.time()
+
+        signature, input_example = mlflow_utils.custom_infer_signature(
+            self.model, self.train_dl, self.siamese, self.image_key, self.mask_key, self.device
+        )
+        logging.info("Signature model has been found")
+
+        mlflow.end_run()  # Ensure not MLFlow runs are active
+        with mlflow.start_run(
+            run_name=run_name, log_system_metrics=self.track_system_metrics
+        ) as run:
+            mlflow.log_params(self.get_hyperparameters())
+            mlflow_utils.log_model_architecture(self.model)
+            logging.info("Hyperparameters have been logged")
+
+            # Training / Validation phases
+            for epoch in range(self.start_epoch, self.nb_epochs):
+                start_time = time.time()
+                logging.info(f"Epoch {epoch + 1}/{self.nb_epochs}")
+
+                # Training Step
+                train_loss, train_metrics = self.training_epoch(epoch)
+                self.history["train_loss"].append(train_loss)
+
+                # Validation Step
+                val_loss, val_metrics = self.validation_epoch(epoch)
+                self.history["val_loss"].append(val_loss)
+
+                if self.track_system_metrics:
+                    self.track_system_metrics = False
+                    mlflow.disable_system_metrics_logging()
+
+                # Update Learning Rate
+                if self.scheduler:
+                    mlflow.log_metric("learning_rate", self.scheduler.get_last_lr()[0], step=epoch)
+                    self.scheduler.step()
+
+                # Save best model & checkpoint
+                self.handle_checkpointing(epoch, val_loss)
+
+                # Log training and validation metrics
+                steps_per_epoch = math.ceil(len(self.valid_dl.dataset) / self.valid_dl.batch_size)
+                step_number = (epoch + 1) * steps_per_epoch
+                mlflow_utils.log_metrics(
+                    metrics=train_metrics, step_number=step_number, phase="Training"
+                )
+                mlflow_utils.log_metrics(
+                    metrics=val_metrics, step_number=step_number, phase="Validation"
+                )
+
+                # Log sample images after validation epoch
+                mlflow_utils.log_images(
+                    model=self.model,
+                    data_loader=self.valid_dl,
+                    epoch=epoch,
+                    device=self.device,
+                    max_images=1,
+                    image_key=self.image_key,
+                    mask_key=self.mask_key,
+                    siamese=self.siamese,
+                    color_dict=DEFAULT_MAPPING,
+                )
+
+                # Logging epoch duration
+                epoch_time = time.time() - start_time
+                mlflow.log_metric("epoch_time", epoch_time, step=epoch)
+                logging.info(f"Epoch {epoch + 1} completed in {epoch_time:.2f}s")
+
+                if self.verbose and self.debug:
+                    logging.info(f"Epoch {epoch + 1} took {epoch_time:.2f} seconds")
+                    if torch.cuda.is_available():
+                        logging.info(
+                            f"GPU memory allocated: {torch.cuda.memory_allocated() / 1024**3:.2f} GB"
+                        )
+
+                # Early stopping
+                if self.trigger_times >= self.patience:
+                    logging.info("Early stopping triggered. Training stopped.")
+                    break
+
+            logging.info(f"Total training time: {time.time() - overall_start_time:.2f}s")
+
+            # log model
+            mlflow_utils.log_model(
+                model=self.model,
+                artifact_path="model",
+                signature=signature,
+                input_example=input_example,
+            )
+
+            logging.info("Best model has been saved to MLflow")
+
+            # Final Testing
+            if self.test_dl:
+                epoch_tloss, test_metrics = self.testing()
+                mlflow_utils.log_metrics(test_metrics, step_number=None, phase="Testing")
+
+                # Testing phase
+                test_metrics = compute_model_class_performance(
+                    model=self.model,
+                    dataloader=self.test_dl,
+                    num_classes=self.num_classes,
+                    device=self.device,
+                    class_names=self.class_names,
+                    siamese=self.siamese,
+                    image_key=self.image_key,
+                    mask_key=self.mask_key,
+                    average_mode="macro",
+                    saving_method="mlflow",
+                )

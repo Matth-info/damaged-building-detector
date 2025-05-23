@@ -3,20 +3,17 @@ import logging
 import os
 import random
 from collections import Counter
-from typing import Any, Dict, Union
-
-import mlflow
 
 # Third-party libraries
 import numpy as np
 
 # PyTorch imports
 import torch
+import torch.distributed as dist
 import torch.nn as nn
 
 # PyTorch Vision imports
 import torchvision
-from mlflow.models.signature import infer_signature
 from prettytable import PrettyTable
 from torch.utils.data import DataLoader, Dataset
 from torch.utils.data.sampler import WeightedRandomSampler
@@ -28,7 +25,6 @@ from src.utils.visualization import apply_color_map
 __all__ = [
     "define_weighted_random_sampler",
     "define_class_weights",
-    "custom_infer_signature",
     "save_checkpoint",
     "load_checkpoint",
     "initialize_optimizer_scheduler",
@@ -141,326 +137,6 @@ def load_checkpoint(checkpoint_path, model, optimizer=None, scheduler=None):
     return checkpoint["epoch"]
 
 
-def log_metrics(metrics: dict, step_number: int, phase: str = "Validation"):
-    """
-    Logs each metric in the dictionary to TensorBoard.
-
-    Parameters:
-    - metrics: Dictionary of metric name and value pairs.
-    - step_number: The current step number.
-    - phase: 'Validation' or 'Training', used to distinguish metrics in TensorBoard.
-    """
-    mlflow.log_metrics(
-        {f"{phase}_{metric_name}": value for metric_name, value in metrics.items()},
-        step=step_number,
-    )
-
-
-def log_loss(loss_value: float, step_number: int, phase: str = "Validation"):
-    """
-    Logs loss value to TensorBoard.
-
-    Parameters:
-    - loss_value: current loss value
-    - step_number: The current step number.
-    - phase: 'Validation' or 'Training', used to distinguish metrics in TensorBoard.
-    """
-    mlflow.log_metric(f"{phase}_loss", f"{loss_value: 2f}", step=step_number)
-
-
-"""
-    def log_graph(model: torch.nn.Module, siamese: bool = False, device: str = "cuda", input_shape: tuple = (1, 3, 512, 512)):
-
-    Logs the model graph to TensorBoard. Supports both single-input and siamese models.
-
-    Args:
-        writer (SummaryWriter): The TensorBoard SummaryWriter.
-        model (torch.nn.Module): The model to log.
-        siamese (bool): Flag to indicate if the model is Siamese.
-        device (str): The device (cuda or cpu) where the model and tensors should be moved.
-        input_shape (tuple): The shape of the input tensor (default: (1, 3, 512, 512)).
-    model.to(device)  # Move model to the correct device
-
-    # For Siamese models, we create two input tensors
-    if siamese:
-        x1 = torch.randn(*input_shape).to(device)
-        x2 = torch.randn(*input_shape).to(device)
-        writer.add_graph(model, (x1, x2))
-    else:
-        x1 = torch.randn(*input_shape).to(device)
-        writer.add_graph(model, x1)"""
-
-
-def log_model(model, artifact_path="best_model", signature=None, input_example=None):
-    mlflow.pytorch.log_model(
-        model,
-        artifact_path=artifact_path,
-        signature=signature,
-        input_example=input_example,
-    )
-
-
-def custom_infer_signature(
-    model,
-    data_loader,
-    siamese: bool = False,
-    image_key: str = "image",
-    mask_key: str = "mask",
-    device: str = "cuda",
-):
-    """
-    Infers the MLflow signature for a given model using a single batch of data from the dataloader.
-
-    Args:
-        model (torch.nn.Module): The model for which to infer the signature.
-        data_loader (DataLoader): DataLoader providing batches of input data.
-        siamese (bool): Whether the model is a Siamese model (two inputs).
-        image_key (str): Key in the batch for input images.
-        mask_key (str): Key in the batch for target masks.
-        device (str): Device to perform inference ('cuda' or 'cpu').
-
-    Returns:
-        signature: The inferred signature for the model.
-    """
-    # Get a single batch from the data loader
-    batch = next(iter(data_loader))
-
-    # Move the model to the specified device and set it to evaluation mode
-    model.to(device)
-    model.eval()
-
-    with torch.no_grad():
-        # Handle the inputs based on whether the model is Siamese or not
-        if siamese:
-            pre_image = batch["pre_image"].to(device)  # Move to device
-            post_image = batch["post_image"].to(device)
-            targets = batch[mask_key].to(device)
-
-            # Perform inference
-            predictions = model(pre_image, post_image)
-
-            # Convert inputs and outputs to CPU and NumPy for MLflow
-            pre_image = pre_image.cpu().numpy()
-            post_image = post_image.cpu().numpy()
-            predictions = predictions.cpu().numpy()
-
-            # Prepare example inputs for MLflow signature
-            example_inputs = {"pre_image": pre_image, "post_image": post_image}
-
-        else:
-            images = batch[image_key].to(device)  # Move to device
-            targets = batch[mask_key].to(device)
-
-            # Perform inference
-            predictions = model(images)
-
-            # Convert inputs and outputs to CPU and NumPy for MLflow
-            images = images.cpu().numpy()
-            predictions = predictions.cpu().numpy()
-
-            # Prepare example inputs for MLflow signature
-            example_inputs = {"images": images}
-
-    # Infer the signature using example inputs and outputs
-    signature = infer_signature(example_inputs, predictions)
-    logging.info("Model Signature has been defined")
-    return signature, example_inputs
-
-
-"""def log_images_to_tensorboard(
-    model: torch.nn.Module,
-    data_loader: DataLoader,
-    writer: SummaryWriter,
-    epoch: int,
-    device: Union[str, torch.device],
-    max_images: int = 4,
-    image_key: str = "image",
-    mask_key: str = "mask",
-    siamese: bool = False,
-    color_dict = None
-):
-    Logs images, labels, and model predictions to TensorBoard.
-
-    Args:
-        model (torch.nn.Module): The model being evaluated.
-        data_loader (DataLoader): DataLoader providing batches of data.
-        writer (SummaryWriter): TensorBoard SummaryWriter instance.
-        epoch (int): Current training epoch.
-        device (Union[str, torch.device]): Device to perform computations on.
-        max_images (int): Maximum number of images to log.
-        image_key (str): Key in the batch dictionary for input images.
-        mask_key (str): Key in the batch dictionary for target masks.
-        siamese (bool): Whether the model is a Siamese model.
-    model.eval()  # Set model to evaluation mode
-
-    # Get a single batch from the data loader
-    batch = next(iter(data_loader))
-    if siamese:
-        x1 = batch["pre_image"].to(device)  # Pre-disaster image
-        x2 = batch["post_image"].to(device)  # Post-disaster image
-        labels = batch[mask_key].to(device)  # Target mask
-    else:
-        x = batch[image_key].to(device)  # Single input image
-        labels = batch[mask_key].to(device)  # Target mask
-
-    # Generate predictions
-    with torch.no_grad():
-        if siamese:
-            predictions = model(x1, x2)  # Forward pass for Siamese model
-        else:
-            predictions = model(x)  # Forward pass for single input model
-        predictions = torch.argmax(predictions, dim=1)
-
-
-    #Select a random subset of images
-    batch_size = labels.size(0)
-    num_images = min(max_images, batch_size)  # Ensure max_images doesn't exceed batch size
-    indices = random.sample(range(batch_size), num_images)  # Randomly select indices
-
-    # Move data back to CPU for visualization and limit the number of images
-    if siamese:
-        inputs_1 = x1.cpu().float()[indices]
-        inputs_2 = x2.cpu().float()[indices]
-    else:
-        inputs = x.cpu().float()[indices]
-
-    labels = labels.cpu().float()[indices]
-    predictions = predictions.cpu().float()[indices]
-
-    # Apply color map to labels and predictions if color_dict is provided
-    if color_dict:
-        colored_labels = apply_color_map(labels, color_dict)
-        colored_predictions = apply_color_map(predictions, color_dict)
-    else:
-        # Default behavior: no color map (just grayscale)
-        colored_labels = labels.unsqueeze(1).float() / 255.0  # Normalize to [0, 1] for grayscale
-        colored_predictions = predictions.unsqueeze(1).float() / 255.0  # Normalize to [0, 1] for grayscale
-
-    # Create grids for inputs, labels, and predictions
-    if siamese:
-        input_grid_1 = torchvision.utils.make_grid(inputs_1, normalize=True, scale_each=True)
-        input_grid_2 = torchvision.utils.make_grid(inputs_2, normalize=True, scale_each=True)
-        writer.add_image(tag="Inputs/Pre_Image", img_tensor=input_grid_1, global_step=epoch)
-        writer.add_image(tag="Inputs/Post_Image", img_tensor=input_grid_2, global_step=epoch)
-    else:
-        input_grid = torchvision.utils.make_grid(inputs, normalize=False, scale_each=True)
-        writer.add_image(tag="Inputs", img_tensor=input_grid, global_step=epoch)
-
-    label_grid = torchvision.utils.make_grid(
-        colored_labels, normalize=False, scale_each=True
-    )
-    pred_grid = torchvision.utils.make_grid(
-        colored_predictions, normalize=False, scale_each=True
-    )
-
-    # Log labels and predictions
-    writer.add_image(tag="Labels", img_tensor=label_grid, global_step=epoch)
-    writer.add_image(tag="Predictions", img_tensor=pred_grid, global_step=epoch)
-
-    model.train()  # Return to training mode if necessary
-"""
-
-
-def log_images_to_mlflow(
-    model: torch.nn.Module,
-    data_loader: DataLoader,
-    epoch: int,
-    device: Union[str, torch.device],
-    max_images: int = 4,
-    image_key: str = "image",
-    mask_key: str = "mask",
-    siamese: bool = False,
-    color_dict=None,
-    log_dir: str = "mlflow_logs",
-):
-    """
-    Logs images, labels, and model predictions to MLflow.
-
-    Args:
-        model (torch.nn.Module): The model being evaluated.
-        data_loader (DataLoader): DataLoader providing batches of data.
-        epoch (int): Current training epoch.
-        device (Union[str, torch.device]): Device to perform computations on.
-        max_images (int): Maximum number of images to log.
-        image_key (str): Key in the batch dictionary for input images.
-        mask_key (str): Key in the batch dictionary for target masks.
-        siamese (bool): Whether the model is a Siamese model.
-        color_dict (dict, optional): Dictionary for color mapping.
-        log_dir (str): Directory to save images before logging to MLflow.
-    """
-    model.eval()  # Set model to evaluation mode
-
-    # Get a single batch from the data loader
-    batch = next(iter(data_loader))
-    if siamese:
-        x1 = batch["pre_image"].to(device)  # Pre-disaster image
-        x2 = batch["post_image"].to(device)  # Post-disaster image
-        labels = batch[mask_key].to(device)  # Target mask
-    else:
-        x = batch[image_key].to(device)  # Single input image
-        labels = batch[mask_key].to(device)  # Target mask
-
-    # Generate predictions
-    with torch.no_grad():
-        if siamese:
-            predictions = model(x1, x2)  # Forward pass for Siamese model
-        else:
-            predictions = model(x)  # Forward pass for single input model
-        predictions = torch.argmax(predictions, dim=1)
-
-    # Select a random subset of images
-    batch_size = labels.size(0)
-    num_images = min(max_images, batch_size)  # Ensure max_images doesn't exceed batch size
-    indices = random.sample(range(batch_size), num_images)  # Randomly select indices
-
-    # Move data back to CPU for visualization and limit the number of images
-    if siamese:
-        inputs_1 = x1.cpu().float()[indices]
-        inputs_2 = x2.cpu().float()[indices]
-    else:
-        inputs = x.cpu().float()[indices]
-
-    labels = labels.cpu().float()[indices]
-    predictions = predictions.cpu().float()[indices]
-
-    # Apply color map to labels and predictions if color_dict is provided
-    if color_dict:
-        colored_labels = apply_color_map(labels, color_dict)
-        colored_predictions = apply_color_map(predictions, color_dict)
-    else:
-        # Default behavior: no color map (just grayscale)
-        colored_labels = labels.unsqueeze(1).float() / 255.0  # Normalize to [0, 1] for grayscale
-        colored_predictions = (
-            predictions.unsqueeze(1).float() / 255.0
-        )  # Normalize to [0, 1] for grayscale
-
-    # Ensure the log directory exists
-    os.makedirs(log_dir, exist_ok=True)
-
-    # Save and log input images
-    if siamese:
-        pre_image_path = os.path.join(log_dir, f"pre_image_epoch_{epoch}.png")
-        post_image_path = os.path.join(log_dir, f"post_image_epoch_{epoch}.png")
-        save_image(inputs_1, pre_image_path, normalize=True, scale_each=True)
-        save_image(inputs_2, post_image_path, normalize=True, scale_each=True)
-        mlflow.log_artifact(pre_image_path, artifact_path="images")
-        mlflow.log_artifact(post_image_path, artifact_path="images")
-    else:
-        input_image_path = os.path.join(log_dir, f"input_image_epoch_{epoch}.png")
-        save_image(inputs, input_image_path, normalize=True, scale_each=True)
-        mlflow.log_artifact(input_image_path, artifact_path="images")
-
-    # Save and log labels and predictions
-    label_image_path = os.path.join(log_dir, f"labels_epoch_{epoch}.png")
-    pred_image_path = os.path.join(log_dir, f"predictions_epoch_{epoch}.png")
-    save_image(colored_labels, label_image_path, normalize=False, scale_each=True)
-    save_image(colored_predictions, pred_image_path, normalize=False, scale_each=True)
-    mlflow.log_artifact(label_image_path, artifact_path="images")
-    mlflow.log_artifact(pred_image_path, artifact_path="images")
-
-    model.train()  # Return to training mode if necessary
-
-
 def save_model(model, ckpt_path="./models", name="model"):
     path = os.path.join(ckpt_path, f"{name}.pth")
     torch.save(model.state_dict(), path, _use_new_zipfile_serialization=False)
@@ -488,7 +164,7 @@ def display_metrics(metrics, phase):
         # Convert the value to a float if it's a numpy float
         if hasattr(value, "item"):
             value = value.item()
-        table.add_row([metric, f"{value: .4f}"])
+        table.add_row([metric, f"{value:.4f}"])
 
     print(table)
 
@@ -528,7 +204,9 @@ def define_weighted_random_sampler(
 
     # Convert class counts to weights (inverse frequency)
     total_pixels = sum(class_counts.values())
-    class_weights = {cls: total_pixels / (count + 1e-6) for cls, count in class_counts.items()}
+    class_weights = {
+        cls: np.round(total_pixels / (count + 1e-6), 3) for cls, count in class_counts.items()
+    }
 
     # Assign a weight to each sample based on the class distribution in its mask
     sample_weights = []
@@ -585,12 +263,6 @@ def define_class_weights(dataset, mask_key="post_mask", subset_size=None, seed: 
 
 
 # Utils Functions for Fine Tuning Mask-R-CNN #
-
-import math
-import sys
-
-import torch
-import torch.distributed as dist
 
 __all__ = ["reduce_dict"]
 
