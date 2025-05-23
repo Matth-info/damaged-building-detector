@@ -8,7 +8,7 @@ import rasterio
 from src.data import generate_tiles
 
 # Sample data directory (adjust as needed)
-data_folder_path = "data/data_samples"
+data_folder_path = "./data/data_samples"
 
 
 # Parameterized test cases with input file and tile size

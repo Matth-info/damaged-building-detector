@@ -5,9 +5,10 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 
-from src.models import BiT, ChangeFormer, ResNet_UNET, SiameseResNetUNet, TinyCD
+from src.models import BiT, ChangeFormer, SiameseResNetUNet, TinyCD
 
 
+# Utils functions
 def draw_circle_with_label(image_size=224, radius=50, center=None):
     """
     Draws a white circle on a black background and generates a 2-class label tensor.
