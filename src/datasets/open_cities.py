@@ -20,6 +20,7 @@ class OpenCities_Building_Dataset(Segmentation_Dataset):
         masks_dir: str,
         transform: Optional[A.Compose] = None,
         filter_invalid_image=True,
+        **kwargs,
     ):
         """
         Initializes the OpenCities dataset with images and corresponding masks.

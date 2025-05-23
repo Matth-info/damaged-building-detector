@@ -30,7 +30,7 @@ class Levir_cd_dataset(Change_Detection_Dataset):
     MEAN = [0.387, 0.382, 0.325]
     STD = [0.158, 0.150, 0.138]
 
-    def __init__(self, origin_dir=None, type="train", transform=None):
+    def __init__(self, origin_dir=None, type="train", transform=None, **kwargs):
         # Folder names
         folder_A = "A"
         folder_B = "B"

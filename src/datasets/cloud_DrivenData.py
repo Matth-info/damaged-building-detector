@@ -21,6 +21,7 @@ class Cloud_DrivenData_Dataset(Cloud_Dataset):
         bands: List[str] = ["B04", "B03", "B02"],
         y_paths: Optional[pd.DataFrame] = None,
         transform: Optional[A.Compose] = None,
+        **kwargs,
     ):
         """
         Args:

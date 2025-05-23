@@ -65,13 +65,13 @@ class Dataset_Inference_Siamese(Segmentation_Dataset):
 
         # Load pre-disaster image
         pre_path = self.pre_disaster_dir / f"{filename}.{self.extension}"
-        pre_image, profile = read_tiff_rasterio(pre_path, bands=[1, 2, 3], with_profile=True)
+        pre_image, profile, _ = read_tiff_rasterio(pre_path, bands=[1, 2, 3], with_profile=True)
         pre_image = np.array(pre_image).astype(np.float32) / 255.0
 
         # Load post-disaster image or use zeros if not provided
         if self.post_disaster_dir:
             post_path = self.post_disaster_dir / f"{filename}.{self.extension}"
-            post_image, _ = read_tiff_rasterio(post_path, bands=[1, 2, 3])
+            post_image, _, _ = read_tiff_rasterio(post_path, bands=[1, 2, 3])
             post_image = np.array(post_image).astype(np.float32) / 255.0
         else:
             post_image = np.zeros_like(pre_image)
@@ -134,7 +134,7 @@ class Dataset_Inference(Segmentation_Dataset):
         filename = self.image_filenames[index]
         path = self.image_dir / f"{filename}.{self.extension}"
 
-        image, profile = read_tiff_rasterio(path, bands=[1, 2, 3], with_profile=True)
+        image, profile, _ = read_tiff_rasterio(path, bands=[1, 2, 3], with_profile=True)
         image = np.array(image).astype(np.float32) / 255.0
 
         if self.transform:

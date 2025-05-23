@@ -48,6 +48,7 @@ class xDB_Damaged_Building(Segmentation_Dataset):
         val_ratio=0.1,
         test_ratio=0.1,
         seed: int = 42,
+        **kwargs,
     ):
         assert type in [
             "train",

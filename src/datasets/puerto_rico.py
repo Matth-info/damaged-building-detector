@@ -44,6 +44,7 @@ class Puerto_Rico_Building_Dataset(Segmentation_Dataset):
         cloud_filter_params=None,
         preprocessing_mode: Optional[str] = "none",  # 'none', 'online', or 'offline'
         filtered_list_path: Optional[str] = None,  # Path to save/load filtered filenames
+        **kwargs,
     ):
         self.base_dir = Path(base_dir)
         self.pre_disaster_dir = self.base_dir / pre_disaster_dir
