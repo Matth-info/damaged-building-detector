@@ -80,6 +80,44 @@ def apply_color_map(
     return color_mask
 
 
+def apply_inverse_color_map(
+    color_mask: np.ndarray,
+    color_dict: Dict[int, Tuple] = DEFAULT_MAPPING,
+) -> np.ndarray:
+    """
+    Converts a colorized mask (RGB or RGBA) back into a label mask.
+
+    Args:
+        color_mask (np.ndarray): The colorized mask, shape (H, W, C) where C is 3 (RGB) or 4 (RGBA).
+        color_dict (dict): A dictionary mapping class labels to RGB(A) colors.
+
+    Returns:
+        np.ndarray: The label mask, shape (H, W), where each pixel contains the class label.
+    """
+    # Ensure the input is a NumPy array
+    if isinstance(color_mask, torch.Tensor):
+        color_mask = color_mask.cpu().numpy()
+
+    # Remove the alpha channel if present
+    if color_mask.shape[-1] == 4:  # RGBA
+        color_mask = color_mask[..., :3]  # Keep only RGB
+
+    # Initialize the label mask
+    height, width, _ = color_mask.shape
+    label_mask = np.zeros((height, width), dtype=np.int32)
+
+    # Iterate through the color dictionary and map colors to labels
+    for label, color in color_dict.items():
+        # Convert the color to a NumPy array for comparison
+        color_array = np.array(color[:3])  # Use only RGB values
+        # Create a binary mask where the color matches
+        match = np.all(color_mask == color_array, axis=-1)
+        # Assign the label to the corresponding pixels
+        label_mask[match] = label
+
+    return label_mask
+
+
 def add_image_transparency(mask: np.ndarray):
     """
     Add a Transparency Layer to Images, making white pixels transparent
