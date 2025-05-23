@@ -1,0 +1,34 @@
+# config/inference.yaml
+
+# ========== Model Parameters ==========
+model:
+  path: ./models/Siamese_ResNet34_Unet_20241215-141740_best_model.pth
+  backbone: resnet34 # resnet18, resnet32, resnet54
+  in_channels: 3
+  out_channels: 3
+  mode: conc # diff
+  device: "auto" # auto, cuda, or cpu
+
+# ========== Data Paths ==========
+data:
+  base_dir: data/processed_data
+  pre_disaster_dir: Pre_Event_San_Juan
+  post_disaster_dir: Post_Event_San_Juan
+  output_dir: outputs/predictions_damages
+  extension: tif
+
+# ========== Inference Settings ==========
+inference:
+  batch_size: 16
+  num_workers: 8
+  save_outputs: true
+  color_mode: damage # default, cloud, damage, building
+  siamese: true
+
+# ========== Augmentation ==========
+augmentation:
+  config_path: null # or path to JSON/YAML defining transforms
+  image_size: [256, 256]
+  normalize_mean: null
+  normalize_std: null
+  mode: infer
