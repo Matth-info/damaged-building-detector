@@ -1,8 +1,10 @@
+import logging
 import os
 import re
 from concurrent.futures import ThreadPoolExecutor
 from typing import List, Optional, Tuple
 
+import geopandas as gpd
 import numpy as np
 import rasterio
 import shapely
@@ -59,14 +61,33 @@ def read_tiff_pillow(filepath: str, mode: str):
     return np.array(Image.open(filepath).convert(mode))
 
 
-def read_tiff_rasterio(file_path, bands: list = [1, 2, 3], with_profile: bool = False):
+def read_tiff_rasterio(
+    file_path, bands: list = [1, 2, 3], with_profile: bool = False, with_transform: bool = False
+):
     """
-    Read a GeoTIFF image and converted into a Numpy array
+    Reads a GeoTIFF image using rasterio and returns it as a NumPy array, optionally with metadata.
+
+    Args:
+        file_path (str): Path to the GeoTIFF file.
+        bands (list, optional): List of band indices to read. Defaults to [1, 2, 3].
+        with_profile (bool, optional): If True, returns the raster profile. Defaults to False.
+        with_transform (bool, optional): If True, returns the affine transform. Defaults to False.
+
+    Returns:
+        tuple: (image_array, profile, transform)
+            image_array (np.ndarray): Image data as a NumPy array with shape (height, width, bands).
+            profile (dict or None): Raster profile dictionary if with_profile is True, else None.
+            transform (Affine or None): Affine transform if with_transform is True, else None.
     """
     with rasterio.open(file_path) as src:
         image_array = src.read(bands)
         profile = src.profile
-    return image_array.transpose(1, 2, 0), profile if with_profile else None
+        transform = src.transform
+    return (
+        image_array.transpose(1, 2, 0),
+        profile if with_profile else None,
+        transform if with_transform else None,
+    )
 
 
 def save_rasterGeoTiff(data, output_file, profile):

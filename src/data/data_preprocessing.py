@@ -13,7 +13,7 @@ logger = logging.getLogger(__name__)
 
 def generate_tiles(input_file: str, output_dir: str, grid_x: int, grid_y: int):
     """
-    Splits a large GeoTIFF into smaller tiles and saves them individually using rasterio.
+    Splits a large GeoTIFF into smaller tiles and saves them individually using rasterio (Sequential Implementation)
 
     Args:
         input_file (str): Path to the input GeoTIFF file.

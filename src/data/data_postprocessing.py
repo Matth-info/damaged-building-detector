@@ -1,251 +1,359 @@
 import logging
 import os
-import re
-from pathlib import Path
-from typing import List, Tuple
+import tempfile
+import traceback
+from concurrent.futures import ProcessPoolExecutor
+from pathlib import Path, Tuple
+from typing import Dict
 
-import folium
-import matplotlib.pyplot as plt
+import geopandas as gpd
+import mercantile
 import numpy as np
-from mpl_toolkits.basemap import Basemap
-from PIL import Image
+import pandas as pd
+from rasterio.features import shapes
+from scipy import ndimage
+from shapely.geometry import shape
+from shapely.geometry.polygon import Polygon
 from tqdm import tqdm
 
-from src.data.utils import (
-    extract_coordinates_parallel,
-    extract_title_ij,
-    filter_files_by_bounds,
-    read_tiff_rasterio,
-)
-from src.utils.visualization import add_image_transparency, make_background_transparent
+from src.data.utils import extract_coor_from_tiff_image, read_tiff_rasterio
+from src.utils.visualization import COLOR_DICT, apply_inverse_color_map
 
 logging.basicConfig(level=logging.ERROR, format="%(asctime)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.ERROR)
 
+# Utils function to transform predicted segmentation mask into geo-referenced blob
+# Use Vector Data instead of Raster Data improve imformation display.
 
-def display_tiles_by_coordinates_folium(
-    left_top: Tuple[float, float],
-    right_bottom: Tuple[float, float],
-    pre_image_folder_path: str = None,
-    post_image_folder_path: str = None,
-    pred_folder_path: str = None,
+
+def extract_overall_vector_data(file_path: str, mode: str, min_area: int = 80):
+    """
+    Extract georeferenced polygons from a semantic segmentation prediction mask (all classes merged)
+
+    Args:
+        file_path (str): Path to the RGB mask image.
+        mode (str): Mode name corresponding to COLOR_DICT.
+        min_area (int): Minimum polygon area (pixels) to keep.
+
+    Returns:
+        List[shapely.geometry.Polygon]: Extracted polygons.
+    """
+    color_dict = COLOR_DICT[mode]
+
+    # Load RGB mask
+    color_mask, _, transform = read_tiff_rasterio(
+        file_path, bands=[1, 2, 3], with_profile=False, with_transform=True
+    )
+
+    # Convert colorized mask to 2D label mask
+    mask = apply_inverse_color_map(color_mask, color_dict)
+
+    # Create binary mask (everything > 0 becomes 1)
+    binary_mask = (mask > 0).astype("uint8")
+
+    # Label connected components
+    labeled_mask, _ = ndimage.label(binary_mask)
+
+    # Extract polygons using rasterio
+    polygons = []
+    for geom, value in shapes(labeled_mask, mask=binary_mask, transform=transform):
+        if value == 0:
+            continue
+        polygon = shape(geom)
+        if polygon.area >= min_area:
+            polygons.append(polygon)
+
+    return polygons
+
+
+def extract_overall_vector_data_by_class(file_path: str, mode: str, min_area: int = 80):
+    """
+    Extract georeferenced polygons per class from a semantic segmentation prediction mask.
+
+    Args:
+        file_path (str): Path to the RGB mask image.
+        mode (str): Mode name corresponding to COLOR_DICT.
+        min_area (int): Minimum polygon area (pixels) to keep.
+
+    Returns:
+        List[Tuple[Polygon, int]]: List of polygons with class labels.
+    """
+    color_dict = COLOR_DICT[mode]
+
+    color_mask, _, transform = read_tiff_rasterio(
+        file_path, bands=[1, 2, 3], with_profile=False, with_transform=True
+    )
+    mask = apply_inverse_color_map(color_mask, color_dict)
+
+    class_labels = np.unique(mask)
+    polygons_by_class = []
+
+    for class_label in class_labels:
+        if class_label == 0:
+            continue  # skip background
+        binary_mask = (mask == class_label).astype("uint8")
+        labeled_mask, _ = ndimage.label(binary_mask)
+
+        for geom, value in shapes(labeled_mask, mask=binary_mask, transform=transform):
+            if value == 0:
+                continue
+            polygon = shape(geom)
+            if polygon.area >= min_area:
+                polygons_by_class.append((polygon, int(class_label)))
+
+    return polygons_by_class
+
+
+def extract_vector_data_by_class(file_path: str, mode: str, min_area: int = 80):
+    """
+    Match general polygons to their most overlapping class-specific polygons.
+
+    Args:
+        file_path (str): Path to the RGB mask.
+        mode (str): COLOR_DICT key for class colors.
+        min_area (int): Minimum polygon area to keep.
+
+    Returns:
+        List[Tuple[Polygon, int]]: Polygons with associated class.
+    """
+    polygons = extract_overall_vector_data(file_path, mode, min_area)
+    polygons_by_class = extract_overall_vector_data_by_class(file_path, mode, min_area)
+
+    polygons_max_overlap = [0.0] * len(polygons)
+    polygons_max_overlap_class = [None] * len(polygons)
+
+    for polygon_i, polygon in enumerate(polygons):
+        for shape_j, shape_class in polygons_by_class:
+            inter_area = polygon.intersection(shape_j).area
+            if inter_area > polygons_max_overlap[polygon_i]:
+                polygons_max_overlap[polygon_i] = inter_area
+                polygons_max_overlap_class[polygon_i] = shape_class
+
+    return [(polygons[i], polygons_max_overlap_class[i]) for i in range(len(polygons))]
+
+
+# Parallelize Implementation
+def _process_single_mask(file_path: str, mode: str, min_area: int) -> Dict[str, list]:
+    """
+    Extract polygons from one mask and save to temporary GeoPackage.
+    """
+    try:
+        polygons_with_class = extract_vector_data_by_class(file_path, mode, min_area)
+        filename = Path(file_path).name
+
+        if not polygons_with_class:
+            return None  # skip empty
+
+        polygons = [poly for poly, _ in polygons_with_class]
+        classes = [cls for _, cls in polygons_with_class]
+        source_filename = [filename for _ in range(len(polygons_with_class))]
+
+        return {"class": classes, "geometry": polygons, "source": source_filename}
+    except Exception as e:
+        logging.info(f"❌ Error processing {file_path}: {e}")
+        traceback.logging.info_exc()
+        return None
+
+
+def process_masks_parallel(
+    folder_path: str,
+    mode: str,
+    output_path: str = "merged_output.gpkg",
+    layer_name: str = "polygons",
+    file_suffix: str = ".tif",
+    min_area: int = 80,
+    num_workers: int = 8,
 ):
     """
-    Display pre/post-event images and prediction overlays within given geospatial coordinates.
+    Parallel batch processor to convert all masks in a folder to one GeoPackage layer. (Parallel Execution)
+
+    Args:
+        folder_path (str): Path to the folder containing masks.
+        mode (str): Mode name corresponding to COLOR_DICT.
+        output_path (str): Path to save the merged GeoPackage.
+        layer_name (str): Layer name in the GeoPackage.
+        file_suffix (str): File suffix to filter files in the folder.
+        min_area (int): Minimum polygon area (pixels) to keep.
+        num_workers (int): Number of parallel workers.
     """
-    lat_max, lon_min = left_top  # top-left corner (latitude, longitude)
-    lat_min, lon_max = right_bottom  # bottom-right corner (latitude, longitude)
 
-    lat = (lat_max + lat_min) / 2
-    long = (lon_max + lon_min) / 2
-
-    m = folium.Map(location=[lat, long], zoom_start=20)
-
-    pre_group = folium.FeatureGroup(name="Pre-Event Images", show=False)
-    post_group = folium.FeatureGroup(name="Post-Event Images", show=False)
-    mask_group = folium.FeatureGroup(name="Predictions", show=False)
-
-    # Create a Rectangle to localize the Images
-    ls = folium.Rectangle(
-        bounds=[[lat_max, lon_min], [lat_min, lon_max]],
-        color="red",
-        line_join="mitter",
-        dash_array="5, 10",
-    )
-    ls.add_to(m)
-
-    file_list = os.listdir(pre_image_folder_path)
-
-    coordinates = extract_coordinates_parallel(
-        filepaths=file_list, folder_path=pre_image_folder_path, max_workers=8
-    )
-    file_list, coordinates = filter_files_by_bounds(
-        filepaths=file_list,
-        coordinates=coordinates,
-        lon_min=lon_min,
-        lon_max=lon_max,
-        lat_min=lat_min,
-        lat_max=lat_max,
+    all_files = sorted(
+        [os.path.join(folder_path, f) for f in os.listdir(folder_path) if f.endswith(file_suffix)]
     )
 
-    for each_file, extent in tqdm(
-        zip(file_list, coordinates), desc="Processing Images", total=len(file_list)
-    ):
-        if each_file.lower().endswith(".tif"):
-            pre_path = os.path.join(pre_image_folder_path, each_file)
+    if not all_files:
+        logging.info("⚠️ No matching .tif files found.")
+        return None
+    else:
+        _, profile, _ = read_tiff_rasterio(all_files[0], with_profile=True)
+        crs = profile["crs"]
+        logging.info(
+            f"🚀 Processing georeferenced {len(all_files)} masks in parallel (CRS : {crs}) over {num_workers} workers ..."
+        )
 
-            left, bottom, right, top = extent  # long_min, lat_min, long_max, lat_max
-            # PRE-EVENT IMAGE
-            pre_img, _ = read_tiff_rasterio(pre_path)
-            # ax.imshow(pre_img, extent=(left, right, bottom, top), alpha=1.0)
-            folium.raster_layers.ImageOverlay(
-                bounds=[[bottom, left], [top, right]],  # folium latitude first
-                image=pre_img,
-                opacity=1.0,
-                control=True,
-                tooltip=f"Pre: {each_file}",
-                interactive=True,
-                overlay=True,
-                zindex=1,
-            ).add_to(pre_group)
+    with ProcessPoolExecutor(max_workers=num_workers) as executor:
+        futures = [
+            executor.submit(_process_single_mask, file_path, mode, min_area)
+            for i, file_path in enumerate(all_files)
+        ]
 
-            # Post-event image
-            post_path = os.path.join(post_image_folder_path, each_file)
-            if os.path.exists(post_path):
-                post_img, _ = read_tiff_rasterio(post_path)
-                folium.raster_layers.ImageOverlay(
-                    bounds=[[bottom, left], [top, right]],
-                    image=post_img,
-                    opacity=1.0,
-                    interactive=True,
-                    tooltip=f"Post: {each_file}",
-                    control=True,
-                    overlay=True,
-                    zindex=1,
-                ).add_to(post_group)
-                # ax.imshow(post_img, extent=(left, right, bottom, top), alpha=0.3)
+        temp_outputs = []
+        for future in tqdm(futures):
+            result = future.result()
+            if result:
+                temp_outputs.append(result)
 
-            # Prediction mask
-            pred_path = os.path.join(pred_folder_path, each_file.replace(".tif", ".png"))
-            if os.path.exists(pred_path):
-                pred_img = np.array(Image.open(pred_path).convert("RGBA"))
-                pred_img = add_image_transparency(mask=pred_img)
-                folium.raster_layers.ImageOverlay(
-                    bounds=[[bottom, left], [top, right]],
-                    image=pred_img,
-                    opacity=1.0,
-                    tooltip=f"Pred: {each_file}",
-                    control=True,
-                    overlay=True,
-                ).add_to(mask_group)
-
-    pre_group.add_to(m)
-    post_group.add_to(m)
-    mask_group.add_to(m)
-    folium.LayerControl().add_to(m)
-    m.save("tiles_map.html")
-    logging.info("Map has been saved as tiles_map.html ✅")
+        # Merge all temp GPKG files
+        logging.info(f"📦 Merging {len(temp_outputs)} temporary files into final GeoPackage...")
+        temp_gdf = pd.concat([gpd.GeoDataFrame(data, crs=crs) for data in temp_outputs])
+        merged_gdf = gpd.GeoDataFrame(temp_gdf).to_crs("EPSG:4326")
+        merged_gdf["id"] = pd.Series(range(len(merged_gdf)))
+        merged_gdf.to_file(
+            output_path, layer=layer_name, driver="GPKG", use_arrow=True, index=False
+        )
+        logging.info(f"\n✅ Done: {len(merged_gdf)} polygons saved to {output_path}")
 
 
-def display_tiles_by_indices(
-    left_top: Tuple[int, int],
-    right_bottom: Tuple[int, int],
-    pre_image_folder_path: str = None,
-    post_image_folder_path: str = None,
-    pred_folder_path: str = None,
-    image_size: Tuple[int, int] = (256, 256),
-    mode: str = "pre",
+# Match footlogging.info predictions to Microsoft Global footlogging.infos.
+# functions inspired by https://github.com/microsoft/GlobalMLBuildingFootlogging.infos/blob/main/examples/example_building_footlogging.infos.ipynb
+def find_quad_keys(base_image: str) -> Dict[str, list | Polygon]:
+    """Using mercantile package functions, find the tiles intersecting the area of interest (AOI)
+
+    Args:
+        base_image (str): _description_
+
+    Returns:
+        _type_: _description_
+    """
+    if Path(base_image).ext == "tif":
+        left, bottom, right, top = extract_coor_from_tiff_image(base_image)  # EPSG:4326
+
+    # longitude , latitude
+    # Define the Area Of Interest (AOI)
+    aoi_geom = {
+        "coordinates": [[[left, top], [left, bottom], [right, bottom], [right, top]]],
+        "type": "Polygon",
+    }
+    aoi_shape = shape(aoi_geom)
+    minx, miny, maxx, maxy = aoi_shape.bounds
+
+    quad_keys = set()
+    for tile in list(mercantile.tiles(minx, miny, maxx, maxy, zooms=9)):
+        quad_keys.add(mercantile.quadkey(tile))
+    quad_keys = list(quad_keys)
+    logging.info(f"The input area spans {len(quad_keys)} tiles: {quad_keys}")
+
+    return {"quad_keys": quad_keys, "aoi_shape": aoi_shape}
+
+
+GDP_DRIVER_MAPPING = {
+    "geojson": {"driver": "GeoJSON"},
+    "gpkg": {"driver": "GPKG", "layer": "polygons"},
+}
+
+
+def dowload_footprints_aoi(
+    quad_keys: list[str],
+    output_filename: str = "building_footprints",
+    output_format: str = "geojson",
+    aoi_shape: Polygon = None,
 ):
-    """
-    Efficiently concatenate tiles into a single image using only (i, j) indices.
-    Handles optional post and prediction overlay with RGBA blending.
-    """
-    i_min, j_min = left_top
-    i_max, j_max = right_bottom
-    h, w = image_size
+    # downloaded Opensource dataset links to footprint files
+    df = pd.read_csv(
+        "https://minedbuildings.z5.web.core.windows.net/global-buildings/dataset-links.csv",
+        dtype=str,
+    )  # features : Location	QuadKey	Url	Size UploadDat
 
-    n_rows = abs(i_max - i_min) + 1
-    n_cols = abs(j_max - j_min) + 1
+    idx = 0
+    combined_gdf = gpd.GeoDataFrame()
+    option_saving = GDP_DRIVER_MAPPING[output_format]
 
-    def filter_list(path: str):
-        i_str, j_str = extract_title_ij(path)
-        i, j = int(i_str), int(j_str)
-        return i_min <= i <= i_max and j_min <= j <= j_max
+    with tempfile.TemporaryDirectory() as tmpdir:
+        # Download the GeoJSON files for each tile that intersects the input geometry
+        tmp_fns = []
+        for quad_key in tqdm(quad_keys):
+            rows = df[df["QuadKey"] == quad_key]
+            if rows.shape[0] == 1:
+                url = rows.iloc[0]["Url"]
 
-    full_image = np.zeros((n_rows * h, n_cols * w, 3), dtype=np.uint8)
+                df2 = pd.read_json(url, lines=True)
+                df2["geometry"] = df2["geometry"].apply(shape)
 
-    if not os.path.exists(pre_image_folder_path):
-        raise FileNotFoundError(f"Pre-image folder not found: {pre_image_folder_path}")
-
-    file_list = list(filter(lambda path: filter_list(path), os.listdir(pre_image_folder_path)))
-    logger.info(f"Visualize {len(file_list)} images")
-
-    for each_file in tqdm(file_list, total=len(file_list), desc="Image Processing"):
-        if not each_file.lower().endswith(".tif"):
-            continue
-
-        i_str, j_str = extract_title_ij(each_file)
-        if i_str is None or j_str is None:
-            continue
-
-        i, j = int(i_str), int(j_str)
-        row = abs(i - i_min)
-        col = abs(j - j_min)
-
-        y1, y2 = row * h, (row + 1) * h
-        x1, x2 = col * w, (col + 1) * w
-
-        # --- Base image ---
-        base_img = np.zeros((h, w, 3), dtype=np.uint8)
-        if mode == "pre":
-            img_path = os.path.join(pre_image_folder_path, each_file)
-        elif mode == "post":
-            img_path = os.path.join(post_image_folder_path, each_file)
-        else:
-            raise ValueError("Choose a valid mode: 'pre' or 'post'.")
-
-        try:
-            base_img, _ = read_tiff_rasterio(img_path, bands=[1, 2, 3], with_profile=False)
-        except Exception as e:
-            logger.error(f"Failed to read {img_path}: {e}")
-            continue
-
-        # --- Overlay mask (RGBA TIF) ---
-        if pred_folder_path:
-            pred_path = os.path.join(pred_folder_path, each_file)
-            if os.path.exists(pred_path):
-                try:
-                    pred_img, _ = read_tiff_rasterio(
-                        pred_path, bands=[1, 2, 3, 4], with_profile=False
-                    )
-                    pred_img_pil = Image.fromarray(pred_img).convert("RGBA")
-                    base_img_pil = Image.fromarray(base_img).convert("RGBA")
-                    # Blended base image and prediction mask
-                    blended = Image.alpha_composite(base_img_pil, pred_img_pil)
-                    blended = np.array(blended.convert("RGB"))  # remove A layer (useless)
-                except Exception as e:
-                    logger.error(f"Failed to overlay prediction: {e}")
-                    blended = base_img
+                gdf = gpd.GeoDataFrame(df2, crs=4326)
+                fn = os.path.join(tmpdir, f"{quad_key}.{output_format}")
+                tmp_fns.append(fn)
+                if not os.path.exists(fn):
+                    gdf.to_file(fn, **option_saving)
+            elif rows.shape[0] > 1:
+                raise ValueError(f"Multiple rows found for QuadKey: {quad_key}")
             else:
-                blended = base_img
-        else:
-            blended = base_img
+                raise ValueError(f"QuadKey is not found in dataset: {quad_key}")
 
-        full_image[x1:x2, y1:y2, :] = blended
+        # Merge the GeoJSON files into a single file
+        for i, fn in enumerate(tmp_fns):
+            gdf = gpd.read_file(fn)  # Read each file into a GeoDataFrame
+            gdf = gdf[gdf.geometry.within(aoi_shape)]  # Filter geometries within the AOI
+            gdf["id"] = range(idx, idx + len(gdf))  # Update 'id' based on idx
+            idx += len(gdf)
+            combined_gdf = pd.concat([combined_gdf, gdf], ignore_index=True)
 
-    # --- Display the result ---
-    plt.figure(figsize=(10, 10), dpi=100)
-    plt.imshow(full_image)
-    plt.title("Concatenated Tiles with Overlay")
-    plt.axis("off")
-    plt.show()
-
-    return full_image
+        combined_gdf = combined_gdf.to_crs("EPSG:4326")
+        combined_gdf.to_file(f"{output_filename}.{output_format}", **option_saving)
+        logging.info(
+            f"Footprint file has been successfully created and stored at {output_filename}.{output_format}"
+        )
 
 
-base_path = Path("./data/processed_data")
-pre_image_folder = base_path / "Pre_Event_San_Juan"
-post_image_folder = base_path / "Post_Event_San_Juan"
-pred_folder = "./data/predictions"
+def merge_predictions_with_footprints(
+    predictions_file: str, footprints_file: str, max_distance: int = 5, projected_crs: int = 3857
+):
+    """
+    Merge local damage predictions with Microsoft building footprints using nearest spatial join.
 
-display_tiles_by_indices(
-    left_top=(20, 20),
-    right_bottom=(50, 50),
-    pre_image_folder_path=pre_image_folder,
-    post_image_folder_path=post_image_folder,
-    pred_folder_path=pred_folder,
-    image_size=(256, 256),
-    mode="post",
-)
+    Parameters:
+    - predictions_file: str, path to the GeoJSON or shapefile with building damage predictions.
+    - footprints_file: str, path to the Microsoft building footprints.
+    - max_distance: float, maximum distance in meters to search for the nearest match (default: 5 meters).
+    - projected_crs: int, projected CRS to better handle local distance assessment (default: 3857 Mercator)
 
-"""
-# Example with coordinates and folium maps
-tiles_by_coordinates_folium(
-    left_top=(18.33, -66.195),       # latitude, longitude (top-left corner)
-    right_bottom=(18.32, -66.19),   # latitude, longitude (bottom-right corner)
-    pre_image_folder_path=pre_image_folder,
-    post_image_folder_path=post_image_folder,
-    pred_folder_path=pred_folder
-)
-"""
+    Returns:
+    - GeoDataFrame with merged class and geometry, including area features.
+    """
+    # Load and reproject to GPS system
+    logging.info("Loading data...")
+    predictions = gpd.read_file(predictions_file).to_crs(epsg=4326)
+    footprints = gpd.read_file(footprints_file).to_crs(epsg=4326)
+
+    logging.info(f"Number of predictions: {len(predictions)}")
+    logging.info(f"Number of footprints: {len(footprints)}")
+
+    # Project to EPSG:3857 for accurate spatial operations (meters)
+    predictions = predictions.to_crs(epsg=projected_crs)
+    footprints = footprints.to_crs(epsg=projected_crs)
+
+    # Spatial join using nearest match
+    # Nearest match is useful in post-catastrophe settings where building geometry might not align exactly
+    logging.info("Performing nearest spatial join...")
+    merged_data = gpd.sjoin_nearest(
+        footprints, predictions, how="left", max_distance=max_distance, distance_col="distance"
+    )
+
+    # Assign class = 0 if no prediction was found
+    if "class" not in merged_data.columns:
+        logging.warning("'class' column not found in predictions. Defaulting all to 0.")
+        merged_data["class"] = 0
+    else:
+        merged_data["class"] = merged_data["class"].fillna(0).astype(int)
+
+    # Add building area in square meters
+    merged_data["area_m2"] = merged_data.geometry.area
+
+    # Keep only relevant columns
+    merged_data = merged_data[["class", "geometry", "area_m2"]].copy()
+
+    # Reproject back to EPSG:4326 for mapping
+    merged_data = merged_data.to_crs(epsg=4326)
+
+    logging.info(f"Number of merged footprints: {len(merged_data)}")
+    return merged_data
