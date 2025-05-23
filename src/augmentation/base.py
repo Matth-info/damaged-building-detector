@@ -89,7 +89,8 @@ class Augmentation_pipeline:
                 transforms.append(
                     A.Resize(height=self.image_size[0], width=self.image_size[1], p=1.0)
                 )
-        else:
+        elif self.mode == "val" or self.mode == "test":
+            # Validation or Test mode
             if self.image_size is not None:
                 transforms.append(
                     A.CenterCrop(height=self.image_size[0], width=self.image_size[1], p=1.0)
@@ -148,6 +149,7 @@ class Augmentation_pipeline:
                 filepath_or_buffer=f"{filepath}.{data_format}",
                 data_format=data_format,
             )
+            return filepath
 
     @classmethod
     def load_pipeline(cls, filepath: str = None):

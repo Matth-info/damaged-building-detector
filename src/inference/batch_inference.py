@@ -15,13 +15,14 @@ from src.utils.visualization import COLOR_DICT, DEFAULT_MAPPING, apply_color_map
 
 
 def custom_infer_collate_siamese(batch: list[dict]):
-    """_summary_
+    """A Custom Pytorch Collate function handling the aggregation of filenames (for naming prediction) and share the GeoTiff profile
+        to the predictions files.
 
     Args:
-        batch (list[dict]): _description_
+        batch (list[dict]): Pytorch collate function take a list of dictionary as input.
 
     Returns:
-        _type_: _description_
+        _type_: Dict[str, list[Torch.Tensor|str|Profile]]
     """
     pre_images = torch.stack([item["pre_image"] for item in batch])
     post_images = torch.stack([item["post_image"] for item in batch])
