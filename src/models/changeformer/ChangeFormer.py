@@ -2229,7 +2229,7 @@ class DecoderTransformer_v3(nn.Module):
 
 # ChangeFormerV5:
 class ChangeFormerV5(nn.Module):
-    def __init__(self, input_nc=3, output_nc=2, decoder_softmax=False, embed_dim=256):
+    def __init__(self, input_nc=3, output_nc=2, decoder_softmax=False, embed_dim=256, **kwargs):
         super().__init__()
         # Transformer Encoder
         self.embed_dims = [64, 128, 320, 512]
@@ -2283,7 +2283,7 @@ class ChangeFormerV5(nn.Module):
 
 # ChangeFormerV6:
 class ChangeFormerV6(nn.Module):
-    def __init__(self, input_nc=3, output_nc=2, decoder_softmax=False, embed_dim=256):
+    def __init__(self, input_nc=3, output_nc=2, decoder_softmax=False, embed_dim=256, **kwargs):
         super().__init__()
         # Transformer Encoder
         self.embed_dims = [64, 128, 320, 512]

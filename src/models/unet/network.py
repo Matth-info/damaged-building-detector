@@ -7,7 +7,7 @@ from .help_funcs import DoubleConv, Down, OutConv, Up
 
 
 class UNet(nn.Module):
-    def __init__(self, n_channels, n_classes, bilinear=False):
+    def __init__(self, n_channels, n_classes, bilinear=False, **kwargs):
         super().__init__()
         self.n_channels = n_channels
         self.n_classes = n_classes

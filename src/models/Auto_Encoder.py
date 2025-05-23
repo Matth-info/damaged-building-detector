@@ -8,6 +8,7 @@ class AutoEncoder(nn.Module):
         num_input_channel=3,
         base_channel_size=32,  # Reduced the base channel size to reduce parameters
         act_fn=nn.ReLU(inplace=True),
+        **kwargs,
     ):
         super().__init__()
 

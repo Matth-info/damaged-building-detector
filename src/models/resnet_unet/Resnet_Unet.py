@@ -12,6 +12,7 @@ class ResNet_UNET(nn.Module):
         backbone_name="resnet18",
         pretrained=True,
         freeze_backbone=True,
+        **kwargs,
     ):
         super().__init__()
 

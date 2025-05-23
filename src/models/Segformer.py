@@ -29,6 +29,7 @@ class Segformer(nn.Module):
         label2id: Optional[Dict[str, int]] = None,
         num_labels: int = 2,
         freeze_encoder=True,
+        **kwargs,
     ):
         super().__init__()
 

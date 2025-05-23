@@ -43,6 +43,7 @@ class SiameseResNetUNet(nn.Module):
         pretrained=True,
         freeze_backbone=True,
         mode="diff",
+        **kwargs,
     ):
         super().__init__()
         assert mode in ["diff", "conc"], "Mode must be either 'diff' or 'conc'."

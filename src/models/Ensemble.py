@@ -3,7 +3,7 @@ import torch.nn as nn
 
 
 class EnsembleModel(nn.Module):
-    def __init__(self, models, aggregation="mean", is_siamese=False):
+    def __init__(self, models, aggregation="mean", is_siamese=False, **kwargs):
         """
         Ensemble of models, supporting both Siamese and non-Siamese networks.
 

@@ -16,6 +16,7 @@ class TinyCD(Module):
         output_layer_bkbn="3",
         out_channels=2,
         freeze_backbone=False,
+        **kwargs
     ):
         super().__init__()
 

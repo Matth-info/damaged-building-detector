@@ -7,7 +7,7 @@ from torchvision.models.detection.mask_rcnn import MaskRCNNPredictor
 
 
 class Maskrcnn(nn.Module):
-    def __init__(self, num_classes: int, hidden_layer_dim=256, pretrained: bool = True):
+    def __init__(self, num_classes: int, hidden_layer_dim=256, pretrained: bool = True, **kwargs):
         """
         Wrapper for Mask R-CNN instance segmentation model.
 

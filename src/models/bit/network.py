@@ -91,6 +91,7 @@ class BiT(nn.Module):
         decoder_softmax=True,
         with_decoder_pos=None,
         with_decoder=True,
+        **kwargs
     ):
         super().__init__()
 
