@@ -1,3 +1,5 @@
+import torch.nn as nn
+
 from .constants import BINARY_MODE, MULTICLASS_MODE, MULTILABEL_MODE
 from .dice import DiceLoss
 from .ensemble import Ensemble
@@ -23,3 +25,16 @@ __all__ = [
     "MCCLoss",
     "Ensemble",
 ]
+
+LOSSES_MAP = {
+    "JaccardLoss": JaccardLoss,
+    "DiceLoss": DiceLoss,
+    "FocalLoss": FocalLoss,
+    "LovaszLoss": LovaszLoss,
+    "SoftBCEWithLogitsLoss": SoftBCEWithLogitsLoss,
+    "SoftCrossEntropyLoss": SoftCrossEntropyLoss,
+    "TverskyLoss": TverskyLoss,
+    "MCCLoss": MCCLoss,
+    "Ensemble": Ensemble,
+    "CrossEntropyLoss": nn.CrossEntropyLoss,
+}

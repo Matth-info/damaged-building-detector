@@ -45,3 +45,23 @@ __all__ = [
     "ConfusionMatrix",
     "IoU",
 ]
+
+METRICS_MAP = {
+    "accuracy": accuracy,
+    "balanced_accuracy": balanced_accuracy,
+    "fbeta_score": fbeta_score,
+    "f1_score": f1_score,
+    "iou_score": iou_score,
+    "precision": precision,
+    "recall": recall,
+    "sensitivity": sensitivity,
+    "specificity": specificity,
+    "positive_predictive_value": positive_predictive_value,
+    "negative_predictive_value": negative_predictive_value,
+    "false_negative_rate": false_negative_rate,
+    "false_positive_rate": false_positive_rate,
+    "false_discovery_rate": false_discovery_rate,
+    "false_omission_rate": false_omission_rate,
+    "positive_likelihood_ratio": positive_likelihood_ratio,
+    "negative_likelihood_ratio": negative_likelihood_ratio,
+}
