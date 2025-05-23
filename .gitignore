@@ -2,16 +2,20 @@
 *.pth
 *.pyc
 
-# Ignore complete dataset 
+# Ignore complete dataset
 data/xDB
 data/Cloud_DrivenData
 data/Open-cities
 data/Puerto_Rico_Dataset
-data/Levir-cd 
+data/Levir-cd
 data/Levir-cd-v2
-data/data_samples
 
-# Ignore logs 
+# Ignore intermediate dataset
+data/processed_data/*
+data/raw_data/*
+data/predictions/*
+
+# Ignore logs
 ./runs
 notebooks/notebook_test.ipynb
 
@@ -81,3 +85,10 @@ maildir
 
 # gradio cache directory
 .gradio/
+
+# environment variable
+.env
+
+# mlflow artifacts
+mlruns/
+mlartifacts/
