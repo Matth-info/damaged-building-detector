@@ -41,36 +41,44 @@ To install the required dependencies, run:
 ```bash
 pip install -r requirements.txt
 ```
-# Training Models
-
-
 # Generate Image Tiles
+```bash
 python ./scripts/prepare_datasets.py \
             --input_file ./path/to/file.tif \
             --output_dir ./data/processed_data \
             --grid_x 256 \
             --grid_y 256 \
             --num_workers 4
-
+```
 # Start MLFlow tracking
 mlflow server --host 127.0.0.1 --port 8080
 
+# Training Models
+```bash
+python ./scripts/run_training.py --config_path ./configs/config.yaml
+```
 # Model Inference
+```bash
 python ./scripts/batch_inference.py \
             --config_path ./configs/inference.yaml
+```
 
 # Post Processing
 ### From Raster Predictions to Vector Predictions
+```bash
 python ./scripts/run_mask_postprocessing.py \
             --config_path ./configs/inference.yaml \
             --output_name vectorized_predictions
-
+```
 ### Merge Vector Predictions with Building Footprints Reference
+```bash
 python ./scripts/merge_damage_assessment.py \
     --aoi_image path/to/file.tif
     --predictions_filepath outputs/predictions.gpkg
     --output_dir outputs
     --format gpkg
-
+```
 # Testing
+```bash
 pytest ./tests -v
+```
