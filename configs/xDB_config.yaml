@@ -1,0 +1,79 @@
+# configs/config.yaml
+
+experiment:
+  name: xDB_SiameseResNetUnet34_damage
+  log_dir: runs
+  model_dir: models
+  training_log_interval: 5
+  checkpoint_interval: 5
+  debug: false
+  verbose: true
+  siamese: true
+
+model:
+  name: SiameseResNetUNet
+  in_channels: 3
+  out_channels: 3
+  freeze_backbone: false
+  backbone: resnet34
+  pretrained: true
+  mode: conc
+  checkpoint_path: None
+
+data:
+  dataset: xDB_Siamese_Dataset
+  origin_dir: "./data/xDB/tier3"
+  mode: simple_damage
+
+augmentation:
+  config_path: null # or path to JSON/YAML defining transforms
+  image_size: [256, 256]
+  normalize_mean: [0.349, 0.354, 0.268]
+  normalize_std: [0.114, 0.102, 0.094]
+  mode: train
+
+data_loader:
+  batch_size: 32
+  num_workers: 16
+  sampler: weighted
+  mask_key: post_mask
+  image_key: post_image
+
+training:
+  nb_epochs: 100
+
+  optimizer:
+    name: AdamW
+    params:
+      lr: 0.001
+      weight_decay: 0.0001
+
+  scheduler:
+    name: StepLR
+    params:
+      step_size: 10
+      gamma: 0.5
+
+  loss_fn: CrossEntropyLoss
+  is_mixed_precision: true
+  reduction: weighted
+  class_weights: [0.1, 1, 10]
+  gradient_accumulation_steps: 1
+  max_norm: 1.0
+
+  early_stopping:
+    patience: 100
+
+testing:
+  metrics:
+    - iou_score
+    - f1_score
+    - precision
+    - recall
+  tta: false
+  class_names: ["background", "minor-damage", "major-damage"]
+
+mlflow:
+  tracking_uri: http://127.0.0.1:6000
+  enable_system_metrics: true
+  task: damage detection # semantic segmentation / damage detection
