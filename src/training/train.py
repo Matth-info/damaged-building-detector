@@ -94,6 +94,7 @@ class Trainer:
         tracking_uri: str = "http://127.0.0.1:8080",
         enable_system_metrics: bool = False,
         task: str = "semantic segmentation",
+        gradient_accumulation_steps: int = 1
     ):
         self.model = model.to(device)
         self.train_dl = train_dl
@@ -136,7 +137,7 @@ class Trainer:
         self.start_epoch = 0
         self.mode = "multiclass"
         self.max_norm = 1.0
-        self.gradient_accumulation_steps = 1
+        self.gradient_accumulation_steps = gradient_accumulation_steps
         self.track_system_metrics = enable_system_metrics
         self.tracking_uri = tracking_uri
         self.task = task

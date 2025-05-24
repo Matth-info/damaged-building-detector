@@ -346,6 +346,9 @@ class xDB_Damaged_Building(Segmentation_Dataset):
 
 # Change Detection Datasets #
 class xDB_Siamese_Dataset(Change_Detection_Dataset):
+    MEAN = [0.349, 0.354, 0.268]
+    STD = [0.114, 0.102, 0.094]
+
     def __init__(
         self,
         origin_dir: str,
@@ -355,9 +358,9 @@ class xDB_Siamese_Dataset(Change_Detection_Dataset):
         val_ratio=0.1,
         test_ratio=0.1,
         seed: int = 42,
+        **kwargs
     ):
-        MEAN = [0.349, 0.354, 0.268]
-        STD = [0.114, 0.102, 0.094]
+     
         assert type in [
             "train",
             "val",

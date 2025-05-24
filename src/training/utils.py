@@ -3,6 +3,7 @@ import logging
 import os
 import random
 from collections import Counter
+from concurrent.futures import ThreadPoolExecutor
 
 # Third-party libraries
 import numpy as np
@@ -170,59 +171,60 @@ def display_metrics(metrics, phase):
 
 
 # Utils for dealing with class imbalanced datasets
-def define_weighted_random_sampler(
-    dataset, mask_key="post_mask", subset_size=None, seed: int = None
-):
+def define_weighted_random_sampler(dataset, mask_key="post_mask", subset_size=None, seed: int = None):
     """
     Define a WeightedRandomSampler for a segmentation dataset to address class imbalance.
 
     Args:
-        dataset: A segmentation dataset where each sample includes an image and its corresponding mask.
-        mask_key: Key to access the mask in the dataset sample (default: "post_mask").
-        subset_size: Number of random samples to use for estimating class weights. If None, uses the full dataset.
-        seed : seed number
+        dataset: Dataset where each sample includes a mask under mask_key.
+        mask_key: Key to access the mask in the dataset sample.
+        subset_size: Optional number of samples to estimate class weights.
+        seed: Optional random seed.
+
     Returns:
         sampler: A WeightedRandomSampler for balanced class sampling.
-        class_weights: Inversely proportional class weights for imbalance dataset.
+        class_weights: Dict of class weights.
     """
     if seed is not None:
         random.seed(seed)
-    # Determine subset of dataset to analyze (optional)
+        np.random.seed(seed)
+
+    # Sample a subset of indices if required
     if subset_size is not None:
-        sampled_indices = random.sample(range(len(dataset)), min(len(dataset), subset_size))
+        sampled_indices = random.sample(range(len(dataset)), min(subset_size, len(dataset)))
     else:
         sampled_indices = range(len(dataset))
 
-    # Initialize a counter for pixel-level class frequencies
+    # Count class frequencies across selected samples
     class_counts = Counter()
-
-    # Loop through the sampled subset of the dataset to count class frequencies in masks
     for i in tqdm(sampled_indices, desc="Counting class frequencies"):
         mask = dataset[i][mask_key]
-        mask_flat = mask.flatten().numpy()  # Flatten the mask to count pixel-level classes
+        mask_flat = mask.flatten().numpy()
         class_counts.update(mask_flat)
 
-    # Convert class counts to weights (inverse frequency)
+    # Calculate inverse frequency weights
     total_pixels = sum(class_counts.values())
     class_weights = {
         cls: np.round(total_pixels / (count + 1e-6), 3) for cls, count in class_counts.items()
     }
 
-    # Assign a weight to each sample based on the class distribution in its mask
-    sample_weights = []
-    for i, input in tqdm(enumerate(dataset), desc="Assigning sample weights"):
-        mask = input[mask_key]
+    # Precompute weights with multiprocessing
+    def compute_sample_weight(i):
+        mask = dataset[i][mask_key]
         mask_flat = mask.flatten().numpy()
         unique, counts = np.unique(mask_flat, return_counts=True)
         pixel_weights = np.array([class_weights[cls] for cls in unique])
-        sample_weight = np.dot(counts, pixel_weights) / counts.sum()
-        sample_weights.append(sample_weight)
+        return np.dot(counts, pixel_weights) / counts.sum()
 
-    # Create the WeightedRandomSampler
-    sampler = WeightedRandomSampler(
-        weights=sample_weights, num_samples=len(dataset), replacement=True
-    )
+    # Use ThreadPoolExecutor to parallelize sample weight computation
+    with ThreadPoolExecutor(max_workers=os.cpu_count()) as executor:
+        sample_weights = list(tqdm(
+            executor.map(compute_sample_weight, range(len(dataset))),
+            total=len(dataset),
+            desc="Assigning sample weights"
+        ))
 
+    sampler = WeightedRandomSampler(weights=sample_weights, num_samples=len(dataset), replacement=True)
     return sampler, class_weights
 
 
