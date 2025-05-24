@@ -4,10 +4,12 @@ pandas
 pandas_path
 arrow
 collection
+einops
 
 # ------------------- PyTorch / ML ------------------- #
 torch
 torchsummary
+torchinfo
 timm
 transformers
 accelerate

@@ -171,7 +171,7 @@ def display_metrics(metrics, phase):
 
 
 # Utils for dealing with class imbalanced datasets
-def define_weighted_random_sampler(dataset, mask_key="post_mask", subset_size=None, seed: int = None):
+def define_weighted_random_sampler(dataset, mask_key="post_mask", subset_size=None, seed: int = None, num_workers : int = 16):
     """
     Define a WeightedRandomSampler for a segmentation dataset to address class imbalance.
 
@@ -217,7 +217,7 @@ def define_weighted_random_sampler(dataset, mask_key="post_mask", subset_size=No
         return np.dot(counts, pixel_weights) / counts.sum()
 
     # Use ThreadPoolExecutor to parallelize sample weight computation
-    with ThreadPoolExecutor(max_workers=os.cpu_count()) as executor:
+    with ThreadPoolExecutor(max_workers=num_workers if num_workers else os.cpu_count()) as executor:
         sample_weights = list(tqdm(
             executor.map(compute_sample_weight, range(len(dataset))),
             total=len(dataset),

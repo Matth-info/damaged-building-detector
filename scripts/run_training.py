@@ -46,12 +46,12 @@ def load_augmentation_pipeline(aug_cfg: str = None, mode: str = None):
     return aug_pipe
 
 
-def load_dataset(data_cfg: dict, aug_cfg: dict, mode: str = "train"):
+def load_dataset(data_cfg: dict, aug_cfg: dict, type: str = "train"):
     # load augmentation pipeline
-    transform = load_augmentation_pipeline(aug_cfg, mode=mode)
+    transform = load_augmentation_pipeline(aug_cfg, mode=type)
     data_cls = DATASETS_MAP[data_cfg["dataset"]]
-    dataset = data_cls(origin_dir=data_cfg["origin_dir"], transform=transform, type=mode)
-    logger.debug(f"Dataset in {mode} mode has been successfully loaded")
+    dataset = data_cls(transform=transform, type=type, **data_cfg)
+    logger.debug(f"Dataset in {type} mode has been successfully loaded")
     return dataset
 
 
@@ -89,9 +89,9 @@ def main():
     device = "cuda" if torch.cuda.is_available() else "cpu"
 
     # Load Dataset
-    train_dataset = load_dataset(data_cfg, aug_cfg, mode="train")
-    val_dataset = load_dataset(data_cfg, aug_cfg, mode="val")
-    test_dataset = load_dataset(data_cfg, aug_cfg, mode="test")
+    train_dataset = load_dataset(data_cfg, aug_cfg, type="train")
+    val_dataset = load_dataset(data_cfg, aug_cfg, type="val")
+    test_dataset = load_dataset(data_cfg, aug_cfg, type="test")
 
     if dl_cfg.get("sampler") == "weighted":
         sampler, class_weights = define_weighted_random_sampler(
@@ -110,10 +110,10 @@ def main():
         train_dataset,
         batch_size=dl_cfg["batch_size"],
         num_workers=dl_cfg["num_workers"],
-        shuffle=True,
+        shuffle=False if sampler else True,
         sampler=sampler,
         pin_memory=True,
-        drop_last=True,
+        drop_last=False,
     )
     val_dl = DataLoader(
         val_dataset,
@@ -153,7 +153,7 @@ def main():
     # Define Trainer object
     trainer = Trainer(
         model=model,
-        train_dl=test_dl,
+        train_dl=train_dl,
         valid_dl=val_dl,
         test_dl=test_dl,
         optimizer=optimizer_class,
@@ -181,6 +181,7 @@ def main():
         class_names=testing_cfg["class_names"],
         enable_system_metrics=mlflow_cfg["enable_system_metrics"],
         tracking_uri=mlflow_cfg["tracking_uri"],
+        gradient_accumulation_steps=training_cfg["gradient_accumulation_steps"]
     )
 
     trainer.train()

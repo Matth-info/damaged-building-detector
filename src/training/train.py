@@ -647,7 +647,6 @@ class Trainer:
                 model=self.model,
                 artifact_path="model",
                 signature=signature,
-                input_example=input_example,
             )
 
             logging.info("Best model has been saved to MLflow")
