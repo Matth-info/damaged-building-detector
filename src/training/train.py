@@ -111,8 +111,7 @@ class Trainer:
         self.model_dir = model_dir
         self.resume_path = resume_path
         self.early_stopping_params = early_stopping_params or {
-            "patience": nb_epochs,
-            "trigger_times": 0,
+            "patience": nb_epochs
         }
         self.image_key = image_key
         self.mask_key = mask_key
@@ -610,18 +609,19 @@ class Trainer:
                     metrics=val_metrics, step_number=step_number, phase="Validation"
                 )
 
-                # Log sample images after validation epoch
-                mlflow_utils.log_images(
-                    model=self.model,
-                    data_loader=self.valid_dl,
-                    epoch=epoch,
-                    device=self.device,
-                    max_images=1,
-                    image_key=self.image_key,
-                    mask_key=self.mask_key,
-                    siamese=self.siamese,
-                    color_dict=DEFAULT_MAPPING,
-                )
+                if epoch % self.training_log_interval == 0:
+                    # Log sample images after validation epoch
+                    mlflow_utils.log_images(
+                        model=self.model,
+                        data_loader=self.valid_dl,
+                        epoch=epoch,
+                        device=self.device,
+                        max_images=1,
+                        image_key=self.image_key,
+                        mask_key=self.mask_key,
+                        siamese=self.siamese,
+                        color_dict=DEFAULT_MAPPING,
+                    )
 
                 # Logging epoch duration
                 epoch_time = time.time() - start_time
@@ -654,7 +654,7 @@ class Trainer:
             # Final Testing
             if self.test_dl:
                 epoch_tloss, test_metrics = self.testing()
-                mlflow_utils.log_metrics(test_metrics, step_number=None, phase="Testing")
+                mlflow_utils.log_metrics(test_metrics, phase="Testing")
 
                 # Testing phase
                 test_metrics = compute_model_class_performance(
