@@ -93,17 +93,20 @@ def main():
     val_dataset = load_dataset(data_cfg, aug_cfg, type="val")
     test_dataset = load_dataset(data_cfg, aug_cfg, type="test")
 
-    if dl_cfg.get("sampler") == "weighted":
+    if dl_cfg.get("sampler") == "weighted" and not training_cfg.get("class_weights"):
         sampler, class_weights = define_weighted_random_sampler(
             train_dataset, mask_key=dl_cfg["mask_key"], subset_size=100, seed=42
         )
+        class_weights = [class_weights[key] for key in class_weights.keys()]
+    elif dl_cfg.get("sampler") == "weighted" and training_cfg.get("class_weights"):
+        sampler, _ = define_weighted_random_sampler(
+            train_dataset, mask_key=dl_cfg["mask_key"], subset_size=100, seed=42
+        )
+        class_weights = training_cfg["class_weights"]
+    elif not dl_cfg.get("sampler") and training_cfg.get("class_weights"):
+        sampler, class_weights = None, training_cfg.get("class_weights")
     else:
         sampler, class_weights = None, None
-
-    if isinstance(class_weights, dict):
-        class_weights = [class_weights[key] for key in class_weights.keys()]
-    else:
-        class_weights = training_cfg["class_weights"]
 
     # Initialize Dataloader
     train_dl = DataLoader(
@@ -139,7 +142,7 @@ def main():
 
     # Define Criterion
     criterion = LOSSES_MAP[training_cfg["loss_fn"]](
-        weight=torch.tensor(class_weights) if training_cfg["reduction"] == "weighted" else None
+        weight=torch.tensor(class_weights).float() if training_cfg["reduction"] == "weighted" else None
     ).to(device)
     logger.debug("Loss has been successfully initialized")
     # Extract optimizer and scheduler
