@@ -16,6 +16,11 @@ from src.losses import (
     SoftCrossEntropyLoss,
     TverskyLoss,
 )
+from src.losses.ordinal import (
+    O2_Loss,
+    Ordinal_CrossEntropy,
+    Weighted_Categorical_CrossEntropy,
+)
 
 # Sample batch size, classes, and image size
 BATCH_SIZE = 4
@@ -95,3 +100,32 @@ def test_ensemble_loss(loss_fn):
 
     loss.backward()
     assert logits.grad is not None, "Gradients are not computed for Ensemble loss!"
+
+
+def test_weighted_categorical_crossentropy_forward():
+    loss_fn = Weighted_Categorical_CrossEntropy()
+    y_pred = torch.randn(2, 4, 8, 8, requires_grad=True)  # (B, C, H, W)
+    y_true = torch.randint(0, 4, (2, 8, 8))  # (B, H, W)
+    loss = loss_fn(y_pred, y_true)
+    assert loss.dim() == 0
+    loss.backward()  # Should not raise
+
+
+def test_ordinal_crossentropy_forward():
+    num_classes = 4
+    loss_fn = Ordinal_CrossEntropy(reduction="sum", num_classes=num_classes)
+    y_pred = torch.randn(2, num_classes, 8, 8, requires_grad=True)  # (B, C, H, W)
+    y_true = torch.randint(0, num_classes, (2, 8, 8))  # (B, H, W)
+    # Patch convert_to_ordinal_labels to use correct num_classes
+    loss = loss_fn(y_pred, y_true)
+    assert loss.shape == torch.Size([])  # should be a scalar
+    loss.backward()  # Should not raise
+
+
+def test_o2_loss_forward():
+    loss_fn = O2_Loss()
+    y_pred = torch.randn(2, 4, 8, 8, requires_grad=True)  # (B, C, H, W)
+    y_true = torch.randint(0, 4, (2, 8, 8))  # (B, H, W)
+    loss = loss_fn(y_pred, y_true)
+    assert loss.dim() == 0
+    loss.backward()  # Should not raise
