@@ -1,18 +1,19 @@
 import torch
 import torch.nn as nn
 
+
 class EnsembleModel(nn.Module):
-    def __init__(self, models, aggregation="mean", is_siamese=False):
+    def __init__(self, models, aggregation="mean", is_siamese=False, **kwargs):
         """
         Ensemble of models, supporting both Siamese and non-Siamese networks.
-        
+
         Args:
             models (list of nn.Module): List of PyTorch models to be used in the ensemble.
             aggregation (str): Aggregation method to combine model outputs.
                                Options: "mean", "vote". Default is "mean".
             is_siamese (bool): Whether the models in the ensemble are Siamese networks.
         """
-        super(EnsembleModel, self).__init__()
+        super().__init__()
         if not all(isinstance(model, nn.Module) for model in models):
             raise TypeError("All models should inherit from nn.Module.")
         if aggregation not in ["mean", "vote"]:
@@ -47,7 +48,13 @@ class EnsembleModel(nn.Module):
         if self.aggregation == "mean":
             return torch.mean(outputs, dim=0)  # Average predictions
         elif self.aggregation == "vote":
-            return torch.mode(outputs.argmax(dim=-1), dim=0)[0]  # Majority vote on class predictions
+            return torch.mode(outputs.argmax(dim=-1), dim=0)[
+                0
+            ]  # Majority vote on class predictions
+
+    @torch.no_grad()
+    def predict(self, *inputs):
+        self.forward(*inputs)
 
     def test_compatibility(self, input_shape, siamese_input_shape=None):
         """
@@ -56,7 +63,7 @@ class EnsembleModel(nn.Module):
         Args:
             input_shape (tuple): Expected input shape for non-Siamese networks.
             siamese_input_shape (tuple): Expected input shape for Siamese networks.
-        
+
         Returns:
             bool: True if all models are compatible, False otherwise.
         """

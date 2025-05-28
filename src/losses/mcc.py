@@ -39,10 +39,7 @@ class MCCLoss(_Loss):
 
         numerator = torch.mul(tp, tn) - torch.mul(fp, fn)
         denominator = torch.sqrt(
-            torch.add(tp, fp)
-            * torch.add(tp, fn)
-            * torch.add(tn, fp)
-            * torch.add(tn, fn)
+            torch.add(tp, fp) * torch.add(tp, fn) * torch.add(tn, fp) * torch.add(tn, fn)
         )
 
         mcc = torch.div(numerator.sum(), denominator.sum())

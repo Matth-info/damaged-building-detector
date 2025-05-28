@@ -1,5 +1,6 @@
 numpy
 torch
+timm
 transformers
 accelerate
 matplotlib
@@ -28,3 +29,5 @@ fire
 mlflow
 psutil
 pynvml
+pytest
+gradio 

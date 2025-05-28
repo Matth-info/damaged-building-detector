@@ -3,12 +3,13 @@ Lovasz-Softmax and Jaccard hinge loss in PyTorch
 Maxim Berman 2018 ESAT-PSI KU Leuven (MIT License)
 """
 
-from __future__ import print_function, division
+
 from typing import Optional
 
 import torch
 import torch.nn.functional as F
 from torch.nn.modules.loss import _Loss
+
 from .constants import BINARY_MODE, MULTICLASS_MODE, MULTILABEL_MODE
 
 try:
@@ -43,9 +44,7 @@ def _lovasz_hinge(logits, labels, per_image=True, ignore=None):
     """
     if per_image:
         loss = mean(
-            _lovasz_hinge_flat(
-                *_flatten_binary_scores(log.unsqueeze(0), lab.unsqueeze(0), ignore)
-            )
+            _lovasz_hinge_flat(*_flatten_binary_scores(log.unsqueeze(0), lab.unsqueeze(0), ignore))
             for log, lab in zip(logits, labels)
         )
     else:
@@ -109,9 +108,7 @@ def _lovasz_softmax(probas, labels, classes="present", per_image=False, ignore=N
             for prob, lab in zip(probas, labels)
         )
     else:
-        loss = _lovasz_softmax_flat(
-            *_flatten_probas(probas, labels, ignore), classes=classes
-        )
+        loss = _lovasz_softmax_flat(*_flatten_probas(probas, labels, ignore), classes=classes)
     return loss
 
 
@@ -231,5 +228,5 @@ class LovaszLoss(_Loss):
                 y_pred, y_true, per_image=self.per_image, ignore=self.ignore_index
             )
         else:
-            raise ValueError("Wrong mode {}.".format(self.mode))
+            raise ValueError(f"Wrong mode {self.mode}.")
         return loss

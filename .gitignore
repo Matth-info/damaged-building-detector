@@ -2,14 +2,93 @@
 *.pth
 *.pyc
 
-# Ignore complete dataset 
+# Ignore complete dataset
 data/xDB
 data/Cloud_DrivenData
 data/Open-cities
 data/Puerto_Rico_Dataset
-data/Levir-cd 
+data/Levir-cd
 data/Levir-cd-v2
 
-# Ignore logs 
+# Ignore intermediate dataset
+data/processed_data/*
+data/raw_data/*
+data/predictions/*
+
+# Ignore logs
 ./runs
 notebooks/notebook_test.ipynb
+
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# C extensions
+*.so
+
+# Distribution / packaging
+.Python
+maildir/
+env/
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# PyInstaller
+#  Usually these files are written by a python script from a template
+#  before PyInstaller builds the exe, so as to inject date/other infos into it.
+*.manifest
+*.spec
+
+# Installer logs
+pip-log.txt
+pip-delete-this-directory.txt
+
+# Unit test / coverage reports
+htmlcov/
+.tox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*,cover
+
+# Translations
+*.mo
+*.pot
+
+# Django stuff:
+*.log
+
+# Sphinx documentation
+docs/_build/
+
+# PyBuilder
+target/
+maildir
+
+# Pytest cache directory
+.pytest_cache/
+
+# gradio cache directory
+.gradio/
+
+# environment variable
+.env
+
+# mlflow artifacts
+mlruns/
+mlartifacts/

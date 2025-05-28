@@ -1,7 +1,7 @@
+import matplotlib.pyplot as plt
+import numpy as np
 import torch
 import torch.nn.functional as F
-import numpy as np
-import matplotlib.pyplot as plt
 
 
 class GradCAM:
@@ -122,9 +122,7 @@ def display_gradcam(input_tensor, heatmap):
     heatmap_colored = colormap(heatmap)[:, :, :3]  # Use the jet colormap
 
     # Superimpose the heatmap on the original image
-    superimposed_img = (
-        heatmap_colored * 0.4 + img
-    )  # Adjust transparency by multiplying by 0.4
+    superimposed_img = heatmap_colored * 0.4 + img  # Adjust transparency by multiplying by 0.4
 
     # Plot the original image and the superimposed heatmap
     plt.figure(figsize=(10, 10))

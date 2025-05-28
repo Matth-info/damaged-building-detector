@@ -1,25 +1,41 @@
-# Utils files for Dataset definitions 
-import torch 
-from PIL import Image
+# Utils files for Dataset definitions
 from pathlib import Path
+
+import torch
+from PIL import Image
 from tqdm import tqdm
 
-
-__all__ = ["custom_collate_fn", "IMG_EXTENSIONS", "is_image_file", "split_and_save_images"]
+__all__ = [
+    "custom_collate_fn",
+    "IMG_EXTENSIONS",
+    "is_image_file",
+    "split_and_save_images",
+]
 
 IMG_EXTENSIONS = [
-    '.jpg', '.JPG', '.jpeg', '.JPEG',
-    '.png', '.PNG', '.ppm', '.PPM', '.bmp', '.BMP', 'tif', 'tiff'
+    ".jpg",
+    ".JPG",
+    ".jpeg",
+    ".JPEG",
+    ".png",
+    ".PNG",
+    ".ppm",
+    ".PPM",
+    ".bmp",
+    ".BMP",
+    "tif",
+    "tiff",
 ]
+
 
 def custom_collate_fn(batch):
     """
     Custom collate function to handle variable-sized targets in a batch.
-    Required for Instance Segmentation Dataloader 
-    
+    Required for Instance Segmentation Dataloader
+
     Parameters:
         batch (list): List of (image, target) tuples.
-    
+
     Returns:
         Tuple: (images, targets)
     """
@@ -36,12 +52,18 @@ def custom_collate_fn(batch):
     # Return images and list of targets
     return images, targets
 
+
 def is_image_file(filepath):
     """Check if a Path object or string has an image file extension."""
     return filepath.suffix.lower() in IMG_EXTENSIONS
 
+
 def split_and_save_images(
-    input_dir : str, output_dir : str, patch_size: int =256, images_folder_names: list[str] = ["A", "B"], label_folder_name :list[str] = "label"
+    input_dir: str,
+    output_dir: str,
+    patch_size: int = 256,
+    images_folder_names: list[str] = ["A", "B"],
+    label_folder_name: list[str] = "label",
 ):
     """
     Splits all images in the input directory into non-overlapping patches and saves them to the output directory.
@@ -92,5 +114,6 @@ def split_and_save_images(
                         patch.save(output_folder / patch_filename)
                         crop_counter += 1
 
-
-    print(f"{image_counter} images ({width},{height}) have been created into {crop_counter} patches of size ({patch_size}, {patch_size}) and saved at {output_dir}")
+    print(
+        f"{image_counter} images ({width}, {height}) have been created into {crop_counter} patches of size ({patch_size}, {patch_size}) and saved at {output_dir}"
+    )

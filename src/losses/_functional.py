@@ -1,8 +1,7 @@
 import math
-import numpy as np
-
 from typing import Optional
 
+import numpy as np
 import torch
 import torch.linalg as LA
 import torch.nn.functional as F

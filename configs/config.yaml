@@ -1,18 +1,80 @@
 # configs/config.yaml
-data:
-  data_dir: "data/raw"
-  processed_dir: "data/processed"
-  batch_size: 32
-  num_workers: 4
+
+experiment:
+  name: test_experiment
+  log_dir: runs
+  model_dir: models
+  training_log_interval: 10
+  checkpoint_interval: 5
+  debug: false
+  verbose: true
+  siamese: true
 
 model:
-  name: "resnet50"
-  num_classes: 10 
+  name: SiameseResNetUNet
+  in_channels: 3
+  out_channels: 2
+  freeze_backbone: true
+  backbone: resnet18
+  pretrained: true
+  mode: conc
+  checkpoint_path: None
+
+data:
+  dataset: Levir_cd_dataset
+  origin_dir: "./data/Levir-cd-v2"
+  type: building
+
+augmentation:
+  config_path: null # or path to JSON/YAML defining transforms
+  image_size: [256, 256]
+  normalize_mean: [0.387, 0.382, 0.325]
+  normalize_std: [0.158, 0.150, 0.138]
+  mode: train
+
+data_loader:
+  batch_size: 16
+  num_workers: 8
+  sampler: None
+  mask_key: mask
+  image_key: image
 
 training:
-  epochs: 10
-  learning_rate: 0.001
-  save_dir: "models/"
+  nb_epochs: 2
 
-logging:
-  log_dir: "outputs/logs"
+  optimizer:
+    name: AdamW
+    params:
+      lr: 0.001
+      weight_decay: 0.0001
+
+  scheduler:
+    name: StepLR
+    params:
+      step_size: 10
+      gamma: 0.5
+
+  loss_fn: CrossEntropyLoss
+  is_mixed_precision: true
+  reduction: weighted
+  class_weights: [1.0, 2.0]
+  gradient_accumulation_steps: 1
+  max_norm: 1.0
+
+  early_stopping:
+    patience: 10
+    trigger_times: 0
+
+testing:
+  metrics:
+    - iou_score
+    - f1_score
+    - precision
+    - recall
+  tta: false
+  class_names: ["No Change", "Change"]
+
+mlflow:
+  tracking_uri: http://127.0.0.1:8080
+  enable_system_metrics: true
+  task: change detection # semantic segmentation / damage detection

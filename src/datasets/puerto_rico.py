@@ -1,21 +1,38 @@
+import csv
 import os
 import re
-from typing import List, Dict, Optional
 from pathlib import Path
-import csv 
-from tqdm import tqdm 
+from typing import Dict, List, Optional
 
+import albumentations as A
+import matplotlib.pyplot as plt
+import numpy as np
 import torch
 from PIL import Image, ImageDraw
-import matplotlib.pyplot as plt
-import albumentations as A
-import numpy as np
-
-
+from tqdm import tqdm
 
 from .base import Segmentation_Dataset
 
+
 class Puerto_Rico_Building_Dataset(Segmentation_Dataset):
+    """
+    Initializes the dataset with directories for pre- and post-disaster images and masks.
+
+    Args:
+        base_dir (str): Base directory path containing all subdirectories.
+        pre_disaster_dir (str): Directory with pre-disaster images.
+        post_disaster_dir (str): Directory with post-disaster images.
+        mask_dir (str): Directory with segmentation masks.
+        transform (Optional[A.Compose]): Albumentations transformation pipeline.
+        extension (str): File extension for images (default is 'jpg').
+        cloud_filter_params (dict): Parameters for the cloud filter model.
+        preprocessing_mode (str): Mode for filtering ('none', 'online', 'offline').
+        filtered_list_path (str): Path to save/load filtered filenames for offline mode.
+    """
+
+    MEAN = None
+    STD = None
+
     def __init__(
         self,
         base_dir: str,
@@ -27,21 +44,8 @@ class Puerto_Rico_Building_Dataset(Segmentation_Dataset):
         cloud_filter_params=None,
         preprocessing_mode: Optional[str] = "none",  # 'none', 'online', or 'offline'
         filtered_list_path: Optional[str] = None,  # Path to save/load filtered filenames
+        **kwargs,
     ):
-        """
-        Initializes the dataset with directories for pre- and post-disaster images and masks.
-
-        Args:
-            base_dir (str): Base directory path containing all subdirectories.
-            pre_disaster_dir (str): Directory with pre-disaster images.
-            post_disaster_dir (str): Directory with post-disaster images.
-            mask_dir (str): Directory with segmentation masks.
-            transform (Optional[A.Compose]): Albumentations transformation pipeline.
-            extension (str): File extension for images (default is 'jpg').
-            cloud_filter_params (dict): Parameters for the cloud filter model.
-            preprocessing_mode (str): Mode for filtering ('none', 'online', 'offline').
-            filtered_list_path (str): Path to save/load filtered filenames for offline mode.
-        """
         self.base_dir = Path(base_dir)
         self.pre_disaster_dir = self.base_dir / pre_disaster_dir
         self.post_disaster_dir = self.base_dir / post_disaster_dir
@@ -57,14 +61,13 @@ class Puerto_Rico_Building_Dataset(Segmentation_Dataset):
         self.image_filenames = self._find_image_filenames()
 
         # Load cloud filter if available
-        if self.cloud_filter_params is not None: 
+        if self.cloud_filter_params is not None:
             self.cloud_filter_load()
 
         # Apply offline preprocessing if specified
         if self.preprocessing_mode == "offline":
             self.image_filenames = self._offline_filter_images()
 
-        
     def cloud_filter_load(self):
         """Loads the cloud filter model if specified."""
         if self.cloud_filter_params is not None:
@@ -74,7 +77,9 @@ class Puerto_Rico_Building_Dataset(Segmentation_Dataset):
 
             self.cloud_filter = model_class.load(file_path=file_path).eval()  # Evaluation mode
             self.cloud_filter.to(device)
-            print(f"A {model_class.__class__.__name__} model has been loaded from {file_path} on {device}.")
+            print(
+                f"A {model_class.__class__.__name__} model has been loaded from {file_path} on {device}."
+            )
         else:
             self.cloud_filter = None
 
@@ -92,7 +97,7 @@ class Puerto_Rico_Building_Dataset(Segmentation_Dataset):
         # Extract parameters
         loss_fn = self.cloud_filter_params.get("loss")(reduction="none")  # Use non-aggregated loss
         threshold = self.cloud_filter_params.get("threshold")  # Loss threshold for filtering
-        device = self.cloud_filter_params.get('device')  # Device (e.g., 'cuda' or 'cpu')
+        device = self.cloud_filter_params.get("device")  # Device (e.g., 'cuda' or 'cpu')
 
         # Move images to device
         pre_images = batch["pre_image"].to(device)
@@ -104,11 +109,17 @@ class Puerto_Rico_Building_Dataset(Segmentation_Dataset):
             reconstructed_post_images = self.cloud_filter.predict(post_images)
 
             # Compute pixel-wise losses
-            loss_pre = loss_fn(reconstructed_pre_images, pre_images).mean(dim=[1, 2, 3])  # Per-image loss
-            loss_post = loss_fn(reconstructed_post_images, post_images).mean(dim=[1, 2, 3])  # Per-image loss
+            loss_pre = loss_fn(reconstructed_pre_images, pre_images).mean(
+                dim=[1, 2, 3]
+            )  # Per-image loss
+            loss_post = loss_fn(reconstructed_post_images, post_images).mean(
+                dim=[1, 2, 3]
+            )  # Per-image loss
 
             # Determine cloudiness based on threshold
-            is_cloudy = (loss_pre < threshold) | (loss_post < threshold)  # Cloudy if either loss less than a threshold
+            is_cloudy = (loss_pre < threshold) | (
+                loss_post < threshold
+            )  # Cloudy if either loss less than a threshold
             not_cloudy = ~is_cloudy  # Non-cloudy mask
 
             # Return results
@@ -116,11 +127,11 @@ class Puerto_Rico_Building_Dataset(Segmentation_Dataset):
 
     def _offline_filter_images(self) -> List[str]:
         """Applies offline cloud filtering and saves filtered filenames."""
-        
+
         if self.filtered_list_path and os.path.exists(self.filtered_list_path):
             # Load precomputed filtered list from CSV file
             print(f"Loading filtered filenames from {self.filtered_list_path}...")
-            with open(self.filtered_list_path, "r", newline='') as f:
+            with open(self.filtered_list_path, newline="") as f:
                 reader = csv.reader(f)
                 return [row[0] for row in reader]  # Each row contains one filename
 
@@ -131,12 +142,12 @@ class Puerto_Rico_Building_Dataset(Segmentation_Dataset):
         data_loader = torch.utils.data.DataLoader(self, batch_size=batch_size, shuffle=False)
 
         filtered_filenames = []
-        with tqdm(data_loader, desc=f"Offline Filtering", unit="batch") as t:
+        with tqdm(data_loader, desc="Offline Filtering", unit="batch") as t:
             for batch_num, batch in enumerate(t):
                 batch_filter = self.cloud_filter_batch(batch)
                 for idx, keep in enumerate(batch_filter):
                     if keep:
-                        image_id = batch_num * batch_size + idx 
+                        image_id = batch_num * batch_size + idx
                         filtered_filenames.append(self.image_filenames[image_id])
             # Save filtered filenames
         if self.filtered_list_path:
@@ -146,7 +157,7 @@ class Puerto_Rico_Building_Dataset(Segmentation_Dataset):
                 for filename in filtered_filenames:
                     writer.writerow([filename])
         # save the filtered_filenames in a txt files
-        return filtered_filenames 
+        return filtered_filenames
 
     def _find_image_filenames(self) -> List[str]:
         """
@@ -156,15 +167,11 @@ class Puerto_Rico_Building_Dataset(Segmentation_Dataset):
             List[str]: Sorted list of filenames (without extensions) common to all directories.
         """
         # Collect file stems (base names without extensions)
-        pre_files = set(
-            f.stem for f in self.pre_disaster_dir.glob(f"*.{self.extension}")
-        )
-        post_files = set(
-            f.stem for f in self.post_disaster_dir.glob(f"*.{self.extension}")
-        )
-        mask_files = set(
+        pre_files = {f.stem for f in self.pre_disaster_dir.glob(f"*.{self.extension}")}
+        post_files = {f.stem for f in self.post_disaster_dir.glob(f"*.{self.extension}")}
+        mask_files = {
             f.stem.replace("_mask", "") for f in self.mask_dir.glob(f"*_mask.{self.extension}")
-        )
+        }
 
         # Find common filenames among all sets
         common_tiles = pre_files & post_files & mask_files
@@ -189,42 +196,55 @@ class Puerto_Rico_Building_Dataset(Segmentation_Dataset):
 
         # Load images and mask, converting to appropriate modes (RGB for images, grayscale for mask)
         pre_image = np.array(
-            Image.open(
-                self.pre_disaster_dir / f"{image_name}.{self.extension}"
-            ).convert("RGB")
+            Image.open(self.pre_disaster_dir / f"{image_name}.{self.extension}").convert("RGB")
         ).astype(np.float32)
 
         post_image = np.array(
-            Image.open(
-                self.post_disaster_dir / f"{image_name}.{self.extension}"
-            ).convert("RGB")
+            Image.open(self.post_disaster_dir / f"{image_name}.{self.extension}").convert("RGB")
         ).astype(np.float32)
 
-        mask_image = (np.array(
-            Image.open(self.mask_dir / f"{image_name}_mask.{self.extension}").convert("L") 
-        ) > 0).astype(np.uint8)
+        mask_image = (
+            np.array(
+                Image.open(self.mask_dir / f"{image_name}_mask.{self.extension}").convert("L")
+            )
+            > 0
+        ).astype(np.uint8)
 
         # Apply transformations if specified (Albumentations supports multiple inputs in the same pipeline)
         if self.transform:
-            transformed = self.transform(pre_image=pre_image / 255.0, post_image=post_image / 255.0, mask=mask_image)
-            pre_image = transformed["pre_image"].to(torch.float32) 
+            transformed = self.transform(
+                pre_image=pre_image / 255.0,
+                post_image=post_image / 255.0,
+                mask=mask_image,
+            )
+            pre_image = transformed["pre_image"].to(torch.float32)
             post_image = transformed["post_image"].to(torch.float32)
             mask_image = transformed["mask"].to(torch.long)
         else:
             # Convert images and mask to tensors with normalization for compatibility with PyTorch
-            pre_image = (torch.tensor(pre_image, dtype=torch.float32).permute(2, 0, 1) / 255.0)
-            post_image = (torch.tensor(post_image, dtype=torch.float32).permute(2, 0, 1) / 255.0)
+            pre_image = torch.tensor(pre_image, dtype=torch.float32).permute(2, 0, 1) / 255.0
+            post_image = torch.tensor(post_image, dtype=torch.float32).permute(2, 0, 1) / 255.0
             mask_image = torch.tensor(mask_image, dtype=torch.long)
 
         # Online filtering
         if self.preprocessing_mode == "online" and self.cloud_filter:
-            batch = {"pre_image": pre_image.unsqueeze(0), "post_image": post_image.unsqueeze(0)}
-            not_cloudy = self.cloud_filter_batch(batch)[0] # First (and only) sample in batch
+            batch = {
+                "pre_image": pre_image.unsqueeze(0),
+                "post_image": post_image.unsqueeze(0),
+            }
+            not_cloudy = self.cloud_filter_batch(batch)[0]  # First (and only) sample in batch
             if not not_cloudy:
                 # Replace with tensors of zeros
-                h, w = pre_image.shape[1], pre_image.shape[2]  # Height and width of the images
-                pre_image = torch.zeros((3, h, w), dtype=torch.float32)  # Zero tensor for pre-image
-                post_image = torch.zeros((3, h, w), dtype=torch.float32)  # Zero tensor for post-image
+                h, w = (
+                    pre_image.shape[1],
+                    pre_image.shape[2],
+                )  # Height and width of the images
+                pre_image = torch.zeros(
+                    (3, h, w), dtype=torch.float32
+                )  # Zero tensor for pre-image
+                post_image = torch.zeros(
+                    (3, h, w), dtype=torch.float32
+                )  # Zero tensor for post-image
                 mask_image = torch.zeros((h, w), dtype=torch.long)  # Zero tensor for mask
 
         return {"pre_image": pre_image, "post_image": post_image, "mask": mask_image}
@@ -243,17 +263,15 @@ class Puerto_Rico_Building_Dataset(Segmentation_Dataset):
         image_name = self.image_filenames[idx]
         pre_image = (
             np.array(
-                Image.open(
-                    self.pre_disaster_dir / f"{image_name}.{self.extension}"
-                ).convert("RGB")
+                Image.open(self.pre_disaster_dir / f"{image_name}.{self.extension}").convert("RGB")
             )
             / 255.0
         )
         post_image = (
             np.array(
-                Image.open(
-                    self.post_disaster_dir / f"{image_name}.{self.extension}"
-                ).convert("RGB")
+                Image.open(self.post_disaster_dir / f"{image_name}.{self.extension}").convert(
+                    "RGB"
+                )
             )
             / 255.0
         )

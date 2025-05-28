@@ -1,21 +1,26 @@
-import os 
+import os
 from pathlib import Path
-from typing import List, Dict, Optional
+from typing import Dict, List, Optional
 
-import rasterio
-import torch 
+import albumentations as A
 import numpy as np
-import albumentations as A  
+import rasterio
+import torch
 
 from .base import Segmentation_Dataset
 
+
 class OpenCities_Building_Dataset(Segmentation_Dataset):
+    MEAN = None
+    STD = None
+
     def __init__(
-        self, 
-        images_dir: str, 
-        masks_dir: str, 
+        self,
+        images_dir: str,
+        masks_dir: str,
         transform: Optional[A.Compose] = None,
-        filter_invalid_image=True
+        filter_invalid_image=True,
+        **kwargs,
     ):
         """
         Initializes the OpenCities dataset with images and corresponding masks.
@@ -36,10 +41,9 @@ class OpenCities_Building_Dataset(Segmentation_Dataset):
         self.transform = transform
         self.filenames = [Path(x) for x in self.images_dir.glob("*.tif")]
         self.nb_input_channel = 3
-        
-        if filter_invalid_image: 
+
+        if filter_invalid_image:
             self.remove_invalid_sample()
-            
 
     def __len__(self):
         """Returns the total number of samples in the dataset."""
@@ -50,12 +54,13 @@ class OpenCities_Building_Dataset(Segmentation_Dataset):
         return filepath.stem
 
     def remove_invalid_sample(self):
-        """ 
-        Removes invalid samples (image and mask) from the dataset. 
+        """
+        Removes invalid samples (image and mask) from the dataset.
         Some images might be corrupted and cannot be opened by rasterio.
         """
-        from tqdm import tqdm
         import logging
+
+        from tqdm import tqdm
 
         valid_filenames = []  # Store valid filenames
 
@@ -72,12 +77,13 @@ class OpenCities_Building_Dataset(Segmentation_Dataset):
                 valid_filenames.append(image_path)
             except (rasterio.errors.RasterioIOError, FileNotFoundError) as e:
                 # Log the error and skip this sample
-                logging.warning(f"Error opening image or mask for {image_path}. Skipping this file.")
+                logging.warning(
+                    f"Error opening image or mask for {image_path}. Skipping this file."
+                )
 
         # Update the dataset with only valid filenames
         self.filenames = valid_filenames
 
-    
     def __getitem__(self, idx: int):
         """Fetches and returns a single dataset sample with optional transformations."""
         image_path = self.filenames[idx]
@@ -88,15 +94,13 @@ class OpenCities_Building_Dataset(Segmentation_Dataset):
         mask_path = os.path.join(self.masks_dir, filename_mask)
         image = self.read_image(image_path)
         mask = self.read_mask(mask_path)
-    
+
         # Apply transformations if specified
         if self.transform is not None:
             # Albumentation expect (H, W, C) images
-            transformed = self.transform(
-                image=image.transpose(1, 2, 0), mask=mask
-            )
+            transformed = self.transform(image=image.transpose(1, 2, 0), mask=mask)
             image = transformed["image"].to(torch.float32) / 255
-            mask = transformed["mask"].to(torch.int64) 
+            mask = transformed["mask"].to(torch.int64)
         else:
             image = torch.tensor(image, dtype=torch.float32) / 255
             mask = torch.tensor(mask, dtype=torch.int64)
@@ -114,9 +118,7 @@ class OpenCities_Building_Dataset(Segmentation_Dataset):
         """Reads and returns the mask from a given path."""
         with rasterio.open(path) as f:
             mask = f.read(1)  # Read only the first band (grayscale mask)
-        return np.where(
-            mask == 255, 1, 0
-        )  # binary mask 0 : no building and 1 : building
+        return np.where(mask == 255, 1, 0)  # binary mask 0 : no building and 1 : building
 
     def read_image_profile(self, id: str):
         """Reads the image profile (metadata) for a given image."""
@@ -148,13 +150,9 @@ class OpenCities_Building_Dataset(Segmentation_Dataset):
             elif isinstance(image, np.ndarray):
                 # If it's already a numpy array, no need to permute
                 if image.ndim == 3 and image.shape[0] == 3:  # (C, H, W)
-                    image = image.transpose(
-                        1, 2, 0
-                    )  # Convert from (C, H, W) to (H, W, C)
+                    image = image.transpose(1, 2, 0)  # Convert from (C, H, W) to (H, W, C)
 
-            mask = np.where(
-                sample["mask"] == 1, 255, 0
-            )  # For compatibility and readibility
+            mask = np.where(sample["mask"] == 1, 255, 0)  # For compatibility and readability
 
             # Display the image and the corresponding mask
             ax[i][0].imshow(image)
@@ -169,5 +167,3 @@ class OpenCities_Building_Dataset(Segmentation_Dataset):
 
         plt.tight_layout()
         plt.show()
-
-

@@ -1,18 +1,25 @@
-import torch
-import numpy as np
-from torchvision.transforms import v2
-from tqdm import tqdm 
-import torch
-import numpy as np
-from PIL import Image
-import numpy as np
-from PIL import Image
+import albumentations as A
 import matplotlib.pyplot as plt
+import numpy as np
+import torch
+from PIL import Image
+from torchvision.transforms import v2
+from tqdm import tqdm
 
 
 class Inference:
-    def __init__(self, model: torch.nn.Module, pre_image: Image = None, post_image: Image = None, post_image_path: str = None,
-                 window_size: int = 512, stride: int = 100, device: str = 'cuda', num_classes: int = 5, mode: str ="siamese", transform = None):
+    def __init__(
+        self,
+        model: torch.nn.Module,
+        pre_image: np.ndarray = None,
+        post_image: np.ndarray = None,
+        window_size: int = 512,
+        stride: int = 100,
+        device: str = "cuda",
+        num_classes: int = 5,
+        mode: str = "siamese",
+        transform=None,
+    ):
         """
         Initialize the Inference class.
 
@@ -24,15 +31,15 @@ class Inference:
             num_classes (int): Number of classes
             stride (int): Stride for the sliding window.
             device (str): Device to run inference on ('cuda' or 'cpu').
-            transform : Data Augmentation functions 
+            transform : Data Augmentation functions
         """
         assert mode in ["siamese", None]
 
-        self.mode = mode 
+        self.mode = mode
         self.model = model.to(device)
         self.pre_image = pre_image
         if self.mode == "siamese":
-            self.post_image = post_image 
+            self.post_image = post_image
         self.window_size = window_size
         self.stride = stride
         self.device = device
@@ -52,7 +59,7 @@ class Inference:
         h, w, _ = image.shape
         for y in range(0, h - self.window_size + 1, self.stride):
             for x in range(0, w - self.window_size + 1, self.stride):
-                patch = image[y:y + self.window_size, x:x + self.window_size]
+                patch = image[y : y + self.window_size, x : x + self.window_size]
                 yield x, y, patch
 
     def _merge_patches(self, patches, image_shape):
@@ -70,8 +77,8 @@ class Inference:
         count_map = np.zeros((image_shape[0], image_shape[1]), dtype=np.float32)
 
         for x, y, patch_pred in patches:
-            full_pred[:, y:y + self.window_size, x:x + self.window_size] += patch_pred
-            count_map[y:y + self.window_size, x:x + self.window_size] += 1
+            full_pred[:, y : y + self.window_size, x : x + self.window_size] += patch_pred
+            count_map[y : y + self.window_size, x : x + self.window_size] += 1
 
         # Avoid division by zero
         count_map[count_map == 0] = 1
@@ -88,9 +95,9 @@ class Inference:
             np.ndarray: Full-size prediction with shape (5, height, width).
         """
         self.model.eval()
-        
+
         pre_image_np = np.array(self.pre_image)
-        if self.mode == "siamese" : 
+        if self.mode == "siamese":
             post_image_np = np.array(self.post_image)
 
         image_shape = pre_image_np.shape[:2]  # (height, width)
@@ -100,7 +107,15 @@ class Inference:
             for x, y, patch in tqdm(self._sliding_window(pre_image_np)):
                 pre_patch = self.transform(Image.fromarray(patch)).unsqueeze(0).to(self.device)
                 if self.mode == "siamese":
-                    post_patch = self.transform(Image.fromarray(post_image_np[y:y+self.window_size, x:x+self.window_size])).unsqueeze(0).to(self.device)
+                    post_patch = (
+                        self.transform(
+                            Image.fromarray(
+                                post_image_np[y : y + self.window_size, x : x + self.window_size]
+                            )
+                        )
+                        .unsqueeze(0)
+                        .to(self.device)
+                    )
                     patch_pred = self.model(x1=pre_patch, x2=post_patch).squeeze(0).cpu().numpy()
                 else:
                     patch_pred = self.model(pre_patch).squeeze(0).cpu().numpy()
@@ -113,34 +128,35 @@ class Inference:
 def merge_images(images):
     """
     Merge a list of images into a single large image by concatenating them horizontally.
-    
+
     Args:
         images (list of Image): List of PIL Image objects to merge.
-        
+
     Returns:
         Image: The merged image.
     """
     # Get the maximum height of all images
     max_height = max(image.height for image in images)
-    
+
     # Resize all images to have the same height (optional)
     resized_images = []
     for image in images:
         resized_image = image.resize((int(image.width * max_height / image.height), max_height))
         resized_images.append(resized_image)
-    
+
     # Concatenate images horizontally
     total_width = sum(image.width for image in resized_images)
-    merged_image = Image.new('RGB', (total_width, max_height))
-    
+    merged_image = Image.new("RGB", (total_width, max_height))
+
     x_offset = 0
     for image in resized_images:
         merged_image.paste(image, (x_offset, 0))
         x_offset += image.width
-    
+
     return merged_image
 
-def plot_results_building(image: Image, prediction: np.ndarray, color_dict: dict): 
+
+def plot_results_building(image: Image, prediction: np.ndarray, color_dict: dict):
     """
     Plot the pre-change image, post-change image, and overlay the prediction.
 

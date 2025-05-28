@@ -1,17 +1,18 @@
-import torch 
-from torch.utils.data import Dataset, DataLoader
-import torch.nn as nn
-from torch.nn import MSELoss
-from torch.amp import autocast, GradScaler
-from torch.optim import Adam
-from torch.utils.tensorboard import SummaryWriter
-
-from tqdm import tqdm
+import os
 from datetime import datetime
-import os 
-import numpy as np
 
-__all__ = ['train','find_threshold']
+import numpy as np
+import torch
+import torch.nn as nn
+from torch.amp import GradScaler, autocast
+from torch.nn import MSELoss
+from torch.optim import Adam
+from torch.utils.data import DataLoader, Dataset
+from torch.utils.tensorboard import SummaryWriter
+from tqdm import tqdm
+
+__all__ = ["train", "find_threshold"]
+
 
 def train(
     model: nn.Module,
@@ -24,7 +25,7 @@ def train(
     log_dir: str = "../logs",
     model_dir: str = "../models",
     experiment_name: str = "experiment",
-    device: str = 'cuda' if torch.cuda.is_available() else 'cpu',
+    device: str = "cuda" if torch.cuda.is_available() else "cpu",
     training_log_interval: int = 5,
     use_amp: bool = True,
     save_best_model: bool = True,
@@ -39,7 +40,7 @@ def train(
         num_epochs (int, optional): Number of epochs. Defaults to 20.
         batch_size (int, optional): Batch size for DataLoader. Defaults to 64.
         learning_rate (float, optional): Learning rate for optimizer. Defaults to 1e-3.
-        criterion (nn.Module, optional): Loss function 
+        criterion (nn.Module, optional): Loss function
         log_dir (str, optional): Directory to save TensorBoard logs. Defaults to '../logs'.
         model_dir (str, optional): Directory to save models. Defaults to '../models'.
         experiment_name (str, optional): Name of the experiment for logging. Defaults to "experiment".
@@ -65,17 +66,38 @@ def train(
     writer = SummaryWriter(log_dir=log_dir)
 
     # Log hyperparameters
-    writer.add_text("Hyperparameters", str({
-        "num_epochs": num_epochs,
-        "batch_size": batch_size,
-        "learning_rate": learning_rate,
-        "use_amp": use_amp,
-        "device": device
-    }))
+    writer.add_text(
+        "Hyperparameters",
+        str(
+            {
+                "num_epochs": num_epochs,
+                "batch_size": batch_size,
+                "learning_rate": learning_rate,
+                "use_amp": use_amp,
+                "device": device,
+            }
+        ),
+    )
 
     # Data loaders
-    train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True, pin_memory=True, num_workers=8)
-    val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False, pin_memory=True, num_workers=8) if val_dataset else None
+    train_loader = DataLoader(
+        train_dataset,
+        batch_size=batch_size,
+        shuffle=True,
+        pin_memory=True,
+        num_workers=8,
+    )
+    val_loader = (
+        DataLoader(
+            val_dataset,
+            batch_size=batch_size,
+            shuffle=False,
+            pin_memory=True,
+            num_workers=8,
+        )
+        if val_dataset
+        else None
+    )
 
     best_val_loss = float("inf")
 
@@ -89,7 +111,10 @@ def train(
                 optimizer.zero_grad()
 
                 # Forward and backward passes
-                with autocast(device_type="cuda", dtype=torch.float16 if use_amp else torch.float32):
+                with autocast(
+                    device_type="cuda",
+                    dtype=torch.float16 if use_amp else torch.float32,
+                ):
                     outputs = model(inputs)
                     loss = criterion(outputs, inputs)
 
@@ -103,7 +128,11 @@ def train(
 
                 train_loss += loss.item()
                 if step % training_log_interval == 0:
-                    writer.add_scalar("Loss/Train_Batch", loss.item(), epoch * len(train_loader) + step)
+                    writer.add_scalar(
+                        "Loss/Train_Batch",
+                        loss.item(),
+                        epoch * len(train_loader) + step,
+                    )
                 t.set_postfix(loss=loss.item())
 
         train_loss /= len(train_loader)
@@ -116,13 +145,18 @@ def train(
             with torch.no_grad():
                 for batch in val_loader:
                     inputs = batch["image"].to(device, non_blocking=True)
-                    with autocast(device_type="cuda", dtype=torch.float16 if use_amp else torch.float32):
+                    with autocast(
+                        device_type="cuda",
+                        dtype=torch.float16 if use_amp else torch.float32,
+                    ):
                         outputs = model(inputs)
                         loss = criterion(outputs, inputs)
                     val_loss += loss.item()
             val_loss /= len(val_loader)
             writer.add_scalar("Loss/Validation", val_loss, epoch)
-            print(f"Epoch {epoch + 1}/{num_epochs}, Train Loss: {train_loss:.4f} / Validation Loss: {val_loss:.4f}")
+            print(
+                f"Epoch {epoch + 1}/{num_epochs}, Train Loss: {train_loss:.4f} / Validation Loss: {val_loss:.4f}"
+            )
 
             # Save the best model
             if save_best_model and val_loss < best_val_loss:
@@ -138,7 +172,9 @@ def train(
 
     # Final logging
     writer.close()
-    print(f"Training complete. Logs saved to: {log_dir} and best model saved at : {best_model_path}")
+    print(
+        f"Training complete. Logs saved to: {log_dir} and best model saved at : {best_model_path}"
+    )
 
     return best_model_path
 
@@ -167,11 +203,11 @@ def find_threshold(model, data, loss_fn, device, confidence_interval=0.95):
     all_losses = []  # To store all the individual losses
 
     with torch.no_grad():
-        with tqdm(data_loader, desc=f"Threshold Computation", unit="batch") as t:
+        with tqdm(data_loader, desc="Threshold Computation", unit="batch") as t:
             for batch in t:
                 inputs = batch["image"].to(device)
                 outputs = model(inputs)
-                
+
                 # Compute the reconstruction loss (MSE)
                 loss = loss_fn(outputs, inputs)
                 all_losses.append(loss.item())
@@ -180,11 +216,11 @@ def find_threshold(model, data, loss_fn, device, confidence_interval=0.95):
 
     # Convert list of losses to a NumPy array for easy manipulation
     all_losses = np.array(all_losses)
-    
+
     # Calculate mean and standard deviation of the reconstruction loss
     mean_loss = np.mean(all_losses)
     std_loss = np.std(all_losses)
-    
+
     # Calculate the threshold based on the confidence interval
     # For a 95% confidence interval, use 1.96 as k (the z-score for 95% confidence)
     z_score = 1.96 if confidence_interval == 0.95 else 1.64  # 1.64 for 90% confidence

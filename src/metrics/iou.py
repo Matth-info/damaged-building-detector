@@ -1,5 +1,6 @@
-import torch
 import numpy as np
+import torch
+
 from .confusionmatrix import ConfusionMatrix
 from .metric import Metric
 
@@ -44,21 +45,26 @@ class IoU(Metric):
         Adds the predicted and target pair to the IoU metric.
 
         Args:
-        - predicted (Tensor): Can be an (N, K, H, W) tensor of predicted scores obtained from 
-                              the model for N examples and K classes, or (N, H, W) tensor of 
+        - predicted (Tensor): Can be an (N, K, H, W) tensor of predicted scores obtained from
+                              the model for N examples and K classes, or (N, H, W) tensor of
                               integer values between 0 and K-1.
-        - target (Tensor): Can be an (N, K, H, W) tensor of target scores for N examples and 
+        - target (Tensor): Can be an (N, K, H, W) tensor of target scores for N examples and
                            K classes, or (N, H, W) tensor of integer values between 0 and K-1.
         """
         # Validate batch sizes
-        assert predicted.size(0) == target.size(0), \
-            'Number of targets and predicted outputs do not match'
-        
+        assert predicted.size(0) == target.size(
+            0
+        ), "Number of targets and predicted outputs do not match"
+
         # Validate dimensions
-        assert predicted.dim() in [3, 4], \
-            "Predictions must be of dimension (N, H, W) or (N, K, H, W)"
-        assert target.dim() in [3, 4], \
-            "Targets must be of dimension (N, H, W) or (N, K, H, W)"
+        assert predicted.dim() in [
+            3,
+            4,
+        ], "Predictions must be of dimension (N, H, W) or (N, K, H, W)"
+        assert target.dim() in [
+            3,
+            4,
+        ], "Targets must be of dimension (N, H, W) or (N, K, H, W)"
 
         # Flatten for confusion matrix processing
         self.conf_metric.add(predicted, target)
@@ -75,7 +81,7 @@ class IoU(Metric):
                    The second output is the mean IoU (mIoU).
         """
         conf_matrix = self.conf_metric.value()
-        
+
         if self.ignore_index is not None:
             for index in self.ignore_index:
                 conf_matrix[:, index] = 0
@@ -86,7 +92,7 @@ class IoU(Metric):
         false_negative = np.sum(conf_matrix, axis=1) - true_positive
 
         # Handle division by zero gracefully
-        with np.errstate(divide='ignore', invalid='ignore'):
+        with np.errstate(divide="ignore", invalid="ignore"):
             iou = true_positive / (true_positive + false_positive + false_negative)
 
         # Return IoU for each class and the mean IoU

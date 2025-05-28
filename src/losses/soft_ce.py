@@ -1,7 +1,9 @@
 from typing import Optional
-from torch import nn
+
 import torch
 import torch.nn.functional as F
+from torch import nn
+
 from ._functional import label_smoothed_nll_loss
 
 __all__ = ["SoftCrossEntropyLoss"]

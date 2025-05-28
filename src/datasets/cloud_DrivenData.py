@@ -1,18 +1,19 @@
 # Dataset folder keep track of the custom pytorch dataset that have been used to load, preprocess data according to the source dataset and the model specificity
-import torch
-import albumentations as A
-import numpy as np
-import pandas as pd
-from PIL import Image
 from pathlib import Path
 from typing import List, Optional
-import matplotlib.pyplot as plt
 
+import albumentations as A
+import matplotlib.pyplot as plt
+import numpy as np
+import pandas as pd
+import torch
+from PIL import Image
 
 from .base import Cloud_Dataset
 
-
 __all__ = ["prepare_cloud_segmentation_data"]
+
+
 class Cloud_DrivenData_Dataset(Cloud_Dataset):
     def __init__(
         self,
@@ -20,6 +21,7 @@ class Cloud_DrivenData_Dataset(Cloud_Dataset):
         bands: List[str] = ["B04", "B03", "B02"],
         y_paths: Optional[pd.DataFrame] = None,
         transform: Optional[A.Compose] = None,
+        **kwargs,
     ):
         """
         Args:
@@ -79,9 +81,7 @@ class Cloud_DrivenData_Dataset(Cloud_Dataset):
             np.ndarray: Stacked image channels as a NumPy array, normalized to [0, 1].
         """
         # Load the channels based on the band names and stack them
-        band_arrs = [
-            self.load_channel(self.data.loc[idx][f"{band}_path"]) for band in self.bands
-        ]
+        band_arrs = [self.load_channel(self.data.loc[idx][f"{band}_path"]) for band in self.bands]
         x_arr = np.stack(band_arrs, axis=-1)
 
         # Normalize the array (divide by max value to scale between 0 and 1)
@@ -91,8 +91,7 @@ class Cloud_DrivenData_Dataset(Cloud_Dataset):
     def true_color_img(self, idx):
         visible_bands = ["B04", "B03", "B02"]  # RGB
         band_arrs = [
-            self.load_channel(self.data.loc[idx][f"{band}_path"])
-            for band in visible_bands
+            self.load_channel(self.data.loc[idx][f"{band}_path"]) for band in visible_bands
         ]
         x_arr = np.stack(band_arrs, axis=-1)
         # Normalize the array (divide by max value to scale between 0 and 1)
@@ -150,8 +149,6 @@ class Cloud_DrivenData_Dataset(Cloud_Dataset):
         Args:
             list_indices (List[int]): List of indices to display.
         """
-        import matplotlib.pyplot as plt  # Ensure matplotlib is imported
-
         num_samples = len(list_indices)
         rows = num_samples  # Calculate the number of rows for the subplot grid
         cols = 2  # Fixed number of columns: image and mask
@@ -171,7 +168,7 @@ class Cloud_DrivenData_Dataset(Cloud_Dataset):
             ax[row][0].set_title(f"Sample {idx + 1}")
             ax[row][0].axis("off")
 
-            # Display mask + image 
+            # Display mask + image
             if mask is not None:
                 ax[row][1].imshow(x, alpha=0.5)
                 ax[row][1].imshow(mask, alpha=0.5)
@@ -189,24 +186,24 @@ class Cloud_DrivenData_Dataset(Cloud_Dataset):
         plt.show()
 
 
-
-def add_paths(df: pd.DataFrame,
-                feature_dir: Path, 
-                label_dir: Path = None, 
-                bands: list = ["B04", "B03", "B02"]
-                ) -> pd.DataFrame:
+def add_paths(
+    df: pd.DataFrame,
+    feature_dir: Path,
+    label_dir: Path = None,
+    bands: list = ["B04", "B03", "B02"],
+) -> pd.DataFrame:
     """
     Adds file paths for each band and label to the dataframe based on chip_id.
-    
+
     Args:
         df (pd.DataFrame): DataFrame containing chip_id (e.g., image identifiers).
         feature_dir (Path): Directory where feature TIF images are stored.
         label_dir (Path, optional): Directory where label TIF images are stored. Defaults to None.
         bands (list): List of band names (e.g., ["B02", "B03", ...]). Defaults to BANDS.
-        
+
     Returns:
         pd.DataFrame: Updated dataframe with new columns for each band path and label path.
-    
+
     Adds the following columns to the dataframe:
         - "{band}_path" for each band image.
         - "label_path" for the label image, if `label_dir` is provided.
@@ -214,7 +211,7 @@ def add_paths(df: pd.DataFrame,
         - "has_image_channels" boolean column indicating if all feature band files exist.
         - "has_label_path" boolean column indicating if the label file exists (if `label_dir` is provided).
         - "accessible" boolean column indicating if all image channels and label file exist.
-    
+
     Ex: train_meta = add_paths(train_meta, TRAIN_FEATURES, TRAIN_LABELS)
     """
     # Ensure feature_dir and label_dir are Path objects
@@ -222,10 +219,8 @@ def add_paths(df: pd.DataFrame,
     if label_dir is not None:
         label_dir = Path(label_dir)
 
-    selected_columns = ["chip_id", "location", "datetime", 
-                        "cloudpath"
-                        ]
-    
+    selected_columns = ["chip_id", "location", "datetime", "cloudpath"]
+
     # Initialize columns to track file existence for each band
     for band in bands:
         df[f"{band}_path"] = feature_dir / df["chip_id"] / f"{band}.tif"
@@ -236,19 +231,23 @@ def add_paths(df: pd.DataFrame,
     # Add "has_image_channels" to check if all bands exist
     df["has_image_channels"] = df[[f"has_{band}_path" for band in bands]].all(axis=1)
     # Add label path and check existence if label_dir is provided
-    if label_dir is not None:
-        df["label_path"] = label_dir / (df["chip_id"] + ".tif")   
+    if label_dir:
+        df["label_path"] = label_dir / (df["chip_id"] + ".tif")
         # Check if the label file exists and add a boolean column
         df["has_label_path"] = df["label_path"].apply(lambda x: x.exists())
         selected_columns.append("label_path")
-    
+
     # Add "accessible" column to check if all bands and label file exist
     df["accessible"] = df["has_image_channels"] & df["has_label_path"]
-    
-    return df[df["accessible"] == True][selected_columns]
+
+    return df[df["accessible"]][selected_columns]
 
 
-def prepare_cloud_segmentation_data(folder_path: str = "../data/Cloud_DrivenData/final/public", train_share: float = 0.8, seed : int = 42):
+def prepare_cloud_segmentation_data(
+    folder_path: str = "../data/Cloud_DrivenData/final/public",
+    train_share: float = 0.8,
+    seed: int = 42,
+):
     """
     Data processing function to create training and validation datasets
     from the DrivenData Cloud Segmentation Challenge dataset.
@@ -265,9 +264,10 @@ def prepare_cloud_segmentation_data(folder_path: str = "../data/Cloud_DrivenData
                - val_x: Validation features dataframe
                - val_y: Validation labels dataframe
     """
-    from pathlib import Path
-    import pandas as pd
     import random
+    from pathlib import Path
+
+    import pandas as pd
 
     random.seed(seed)
 

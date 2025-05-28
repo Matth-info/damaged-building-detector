@@ -1,6 +1,7 @@
 from typing import List, Optional
 
 import torch
+
 from ._functional import soft_tversky_score
 from .constants import BINARY_MODE, MULTICLASS_MODE, MULTILABEL_MODE
 from .dice import DiceLoss
@@ -46,9 +47,7 @@ class TverskyLoss(DiceLoss):
         gamma: float = 1.0,
     ):
         assert mode in {BINARY_MODE, MULTILABEL_MODE, MULTICLASS_MODE}
-        super().__init__(
-            mode, classes, log_loss, from_logits, smooth, ignore_index, eps
-        )
+        super().__init__(mode, classes, log_loss, from_logits, smooth, ignore_index, eps)
         self.alpha = alpha
         self.beta = beta
         self.gamma = gamma
@@ -56,9 +55,5 @@ class TverskyLoss(DiceLoss):
     def aggregate_loss(self, loss):
         return loss.mean() ** self.gamma
 
-    def compute_score(
-        self, output, target, smooth=0.0, eps=1e-7, dims=None
-    ) -> torch.Tensor:
-        return soft_tversky_score(
-            output, target, self.alpha, self.beta, smooth, eps, dims
-        )
+    def compute_score(self, output, target, smooth=0.0, eps=1e-7, dims=None) -> torch.Tensor:
+        return soft_tversky_score(output, target, self.alpha, self.beta, smooth, eps, dims)

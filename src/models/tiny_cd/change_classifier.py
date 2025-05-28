@@ -1,11 +1,12 @@
 from typing import List
 
+import torch
 import torchvision
 from torch import Tensor
 from torch.nn import Identity, Module, ModuleList
 
-from .layers import (MixingBlock, MixingMaskAttentionBlock, PixelwiseLinear,
-                     UpMask)
+from .layers import MixingBlock, MixingMaskAttentionBlock, PixelwiseLinear, UpMask
+
 
 class TinyCD(Module):
     def __init__(
@@ -15,13 +16,12 @@ class TinyCD(Module):
         output_layer_bkbn="3",
         out_channels=2,
         freeze_backbone=False,
+        **kwargs
     ):
         super().__init__()
 
         # Load the pretrained backbone according to parameters:
-        self._backbone = _get_backbone(
-            bkbn_name, pretrained, output_layer_bkbn, freeze_backbone
-        )
+        self._backbone = _get_backbone(bkbn_name, pretrained, output_layer_bkbn, freeze_backbone)
 
         # Initialize mixing blocks:
         self._first_mix = MixingMaskAttentionBlock(6, 3, [3, 10, 5], [10, 5, 1])
@@ -50,6 +50,10 @@ class TinyCD(Module):
         latents = self._decode(features)
         return self._classify(latents)
 
+    @torch.no_grad()
+    def predict(self, x1, x2):
+        self.forward(x1, x2)
+
     def _encode(self, x1, x2) -> List[Tensor]:
         features = [self._first_mix(x1, x2)]
         for num, layer in enumerate(self._backbone):
@@ -64,9 +68,8 @@ class TinyCD(Module):
             upping = self._up[i](upping, features[j])
         return upping
 
-def _get_backbone(
-    bkbn_name, pretrained, output_layer_bkbn, freeze_backbone
-) -> ModuleList:
+
+def _get_backbone(bkbn_name, pretrained, output_layer_bkbn, freeze_backbone) -> ModuleList:
     # The whole model:
     entire_model = getattr(torchvision.models, bkbn_name)(
         weights="DEFAULT" if pretrained else None

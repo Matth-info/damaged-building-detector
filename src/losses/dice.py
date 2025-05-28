@@ -1,8 +1,9 @@
-from typing import Optional, List
+from typing import List, Optional
 
 import torch
 import torch.nn.functional as F
 from torch.nn.modules.loss import _Loss
+
 from ._functional import soft_dice_score, to_tensor
 from .constants import BINARY_MODE, MULTICLASS_MODE, MULTILABEL_MODE
 
@@ -41,12 +42,10 @@ class DiceLoss(_Loss):
             https://github.com/BloodAxe/pytorch-toolbelt
         """
         assert mode in {BINARY_MODE, MULTILABEL_MODE, MULTICLASS_MODE}
-        super(DiceLoss, self).__init__()
+        super().__init__()
         self.mode = mode
         if classes is not None:
-            assert (
-                mode != BINARY_MODE
-            ), "Masking classes is not supported with mode=binary"
+            assert mode != BINARY_MODE, "Masking classes is not supported with mode=binary"
             classes = to_tensor(classes, dtype=torch.long)
 
         self.classes = classes
@@ -94,9 +93,7 @@ class DiceLoss(_Loss):
                 )  # N,H*W -> N,H*W, C
                 y_true = y_true.permute(0, 2, 1) * mask.unsqueeze(1)  # N, C, H*W
             else:
-                y_true = F.one_hot(
-                    y_true.to(torch.long), num_classes
-                )  # N,H*W -> N,H*W, C
+                y_true = F.one_hot(y_true.to(torch.long), num_classes)  # N,H*W -> N,H*W, C
                 y_true = y_true.permute(0, 2, 1)  # N, C, H*W
 
         if self.mode == MULTILABEL_MODE:
@@ -133,7 +130,5 @@ class DiceLoss(_Loss):
     def aggregate_loss(self, loss):
         return loss.mean()
 
-    def compute_score(
-        self, output, target, smooth=0.0, eps=1e-7, dims=None
-    ) -> torch.Tensor:
+    def compute_score(self, output, target, smooth=0.0, eps=1e-7, dims=None) -> torch.Tensor:
         return soft_dice_score(output, target, smooth, eps, dims)

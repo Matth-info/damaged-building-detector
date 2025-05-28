@@ -1,2 +1,54 @@
+# ------------------- Core Libraries ------------------- #
 numpy
+pandas
+pandas_path
+arrow
+collection
+einops
+
+# ------------------- PyTorch / ML ------------------- #
 torch
+torchsummary
+torchinfo
+timm
+transformers
+accelerate
+scikit-learn
+albumentations
+
+# ------------------- Geospatial ------------------- #
+folium
+rasterio
+shapely
+pyproj
+xarray
+xarray-spatial
+geopandas
+mercantile
+
+# ------------------- Visualization ------------------- #
+matplotlib
+seaborn
+spacy
+gradio
+
+# ------------------- Logging & Experiment Tracking ------------------- #
+tensorboard
+tensorboardX
+mlflow
+
+# ------------------- Formatters & CLI Tools ------------------- #
+prettytable
+fire
+
+# ------------------- Data Handling ------------------- #
+fastparquet
+
+# ------------------- System Utilities ------------------- #
+psutil
+pynvml
+
+# ------------------- Dev / Testing ------------------- #
+pytest
+pre-commit
+kaggle

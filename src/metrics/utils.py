@@ -1,25 +1,30 @@
-import torch
-import numpy as np
-from sklearn.metrics import multilabel_confusion_matrix, precision_score, recall_score, f1_score
-from training.augmentations import augmentation_test_time, augmentation_test_time_siamese
-import albumentations as A
-import pandas as pd 
-from tqdm import tqdm 
-import mlflow
 import logging
 
+import albumentations as A
+import mlflow
+import numpy as np
+import pandas as pd
+import torch
+from sklearn.metrics import (
+    f1_score,
+    multilabel_confusion_matrix,
+    precision_score,
+    recall_score,
+)
+from tqdm import tqdm
+
+
 def compute_model_class_performance(
-        model,
-        dataloader,
-        num_classes,
-        device='cuda',
-        class_names=None, 
-        siamese=False,
-        image_key="image",
-        mask_key="mask",
-        average_mode="macro",
-        tta=False,
-        mlflow_bool=False
+    model,
+    dataloader,
+    num_classes,
+    device="cuda",
+    class_names=None,
+    siamese=False,
+    image_key="image",
+    mask_key="mask",
+    average_mode="macro",
+    saving_method=None,
 ):
     """
     Computes and stores class-wise performance metrics for a segmentation model.
@@ -34,11 +39,10 @@ def compute_model_class_performance(
         image_key (str): Key for accessing images in the dataloader batch.
         mask_key (str): Key for accessing masks in the dataloader batch.
         average_mode (str): Averaging mode for overall metrics ('macro', 'micro', etc.).
-        tta (bool): Run Test Time Augmentation 
-        output_file (str): Path to the file where metrics will be stored.
+        saving_method (str): Define the method for saving results ('mlflow', 'pandas', 'display').
 
     Returns:
-        None
+        dict: A dictionary containing class-wise and overall metrics.
     """
     model.eval()
     all_preds = []
@@ -47,43 +51,17 @@ def compute_model_class_performance(
     total_pixels = 0
 
     with torch.no_grad():
-        with tqdm(dataloader, desc=f"Testing", unit="batch") as t:
+        with tqdm(dataloader, desc="Testing", unit="batch") as t:
             for batch in t:
                 if siamese:
                     pre_image = batch["pre_image"].to(device)
                     post_image = batch["post_image"].to(device)
                     targets = batch[mask_key].to(device)
-
-                    if tta:
-                        outputs = augmentation_test_time_siamese(
-                            model=model, 
-                            images_1=pre_image, 
-                            images_2=post_image, 
-                            list_augmentations=[
-                                                A.HorizontalFlip(p=1.0),  # Horizontal flip
-                                                A.VerticalFlip(p=1.0)    # Vertical flip
-                                            ],
-                            aggregation="mean", 
-                            device=device
-                            )
-                    else:
-                        outputs = model(pre_image, post_image)
+                    outputs = model(pre_image, post_image)
                 else:
                     images = batch[image_key].to(device)
                     targets = batch[mask_key].to(device)
-                    if tta:
-                        outputs = augmentation_test_time(
-                            model=model, 
-                            images=images, 
-                            list_augmentations=[
-                                                A.HorizontalFlip(p=1.0),  # Horizontal flip
-                                                A.VerticalFlip(p=1.0)    # Vertical flip
-                                            ],
-                            aggregation="mean", 
-                            device=device
-                        )
-                    else: 
-                        outputs = model(images)
+                    outputs = model(images)
 
                 preds = torch.argmax(outputs, dim=1).cpu().numpy()
                 targets = targets.cpu().numpy()
@@ -114,37 +92,85 @@ def compute_model_class_performance(
         dice = (2 * tp) / (2 * tp + fp + fn) if (2 * tp + fp + fn) > 0 else 0.0
         iou = tp / (tp + fp + fn) if (tp + fp + fn) > 0 else 0.0
 
-        metrics_data.append({
-            "Class": class_names[i],
-            "Precision": precision,
-            "Recall": recall,
-            "F1 Score": f1,
-            "IoU": iou,
-            "Dice": dice
-        })
-    
-    metrics_df = pd.DataFrame(metrics_data)
+        metrics_data.append(
+            {
+                "Class": class_names[i],
+                "Precision": np.round(precision, 4),
+                "Recall": np.round(recall, 4),
+                "F1 Score": np.round(f1, 4),
+                "IoU": np.round(iou, 4),
+                "Dice": np.round(dice, 4),
+            }
+        )
 
+    metrics_df = pd.DataFrame(metrics_data)
+    metrics_df = metrics_df.set_index("Class")  # Ensure "Class" is set as the index
+
+    # remove background / zero change from the Overall Metrics
+    labels = [i for i in unique_classes if i != 0]
     # Compute overall metrics
-    precision_overall = precision_score(all_targets, all_preds, labels=unique_classes, average=average_mode, zero_division=0)
-    recall_overall = recall_score(all_targets, all_preds, labels=unique_classes, average=average_mode, zero_division=0)
-    f1_overall = f1_score(all_targets, all_preds, labels=unique_classes, average=average_mode, zero_division=0)
+    precision_overall = precision_score(
+        all_targets,
+        all_preds,
+        labels=labels,
+        average=average_mode,
+        zero_division=0,
+    )
+    recall_overall = recall_score(
+        all_targets,
+        all_preds,
+        labels=labels,
+        average=average_mode,
+        zero_division=0,
+    )
+    f1_overall = f1_score(
+        all_targets,
+        all_preds,
+        labels=labels,
+        average=average_mode,
+        zero_division=0,
+    )
 
     overall_metrics_data = {
-            "Overall Precision": [precision_overall],
-            "Overall Recall": [recall_overall],
-            "Overall F1 Score": [f1_overall]
-        }
-    overall_metrics_df = pd.DataFrame(overall_metrics_data)
-    
-    if mlflow_bool:
-        mlflow.log_table(metrics_df, artifact_file="class_wise_test_performance.json")
+        f"Precision ({average_mode})": [np.round(precision_overall, 4)],
+        f"Recall ({average_mode})": [np.round(recall_overall, 4)],
+        f"F1 Score ({average_mode})": [np.round(f1_overall, 4)],
+    }
+    overall_metrics_df = pd.DataFrame(overall_metrics_data)  # No index is set here
+
+    # Handle saving methods
+    if saving_method == "mlflow":
+        mlflow.log_table(
+            metrics_df.reset_index(), artifact_file="class_wise_test_performance.json"
+        )
         mlflow.log_table(overall_metrics_df, artifact_file="overall_test_performance.json")
         logging.info("Per-Class Performance and Overall Performance file logged as artifact")
-    else:
-        print("Class-wise Performance Metrics:")
+
+    elif saving_method == "display":
+        print("Class-wise Performance Metrics:\n")
         print(metrics_df)
         print("-" * 40)
-        print("Overall Performance Metrics:")
+        print("Overall Performance Metrics:\n")
         for metric, value in overall_metrics_data.items():
-            print(f"{metric}: {value[0]:.4f}")
+            print(f"{metric}: {value[0]:.3f}")
+
+    elif saving_method == "pandas":
+        metrics_df.to_csv(
+            "class_wise_test_performance.csv", index=True
+        )  # Class-wise metrics with index
+        overall_metrics_df.to_csv(
+            "overall_test_performance.csv", index=False
+        )  # Overall metrics without index
+        print("Metrics saved as CSV files.")
+
+    elif not saving_method:
+        print("Metrics will not be saved.")
+
+    else:
+        print("Unsupported saving method. Metrics will not be saved.")
+
+    # Return metrics as a dictionary
+    return {
+        "class_wise_metrics": metrics_df,
+        "overall_metrics": overall_metrics_df,
+    }

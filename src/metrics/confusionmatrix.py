@@ -1,5 +1,6 @@
 import numpy as np
 import torch
+
 from .metric import Metric
 
 
@@ -51,38 +52,42 @@ class ConfusionMatrix(Metric):
             target = target.cpu().numpy()
 
         # Ensure batch dimension consistency
-        assert predicted.shape[0] == target.shape[0], \
-            'Number of targets and predicted outputs do not match'
+        assert (
+            predicted.shape[0] == target.shape[0]
+        ), "Number of targets and predicted outputs do not match"
 
         # If predicted is not a 1D array, convert class scores to class indices
         if np.ndim(predicted) != 1:
-            assert predicted.shape[1] == self.num_classes, \
-                'Number of predictions does not match size of confusion matrix'
+            assert (
+                predicted.shape[1] == self.num_classes
+            ), "Number of predictions does not match size of confusion matrix"
             predicted = np.argmax(predicted, axis=1)
         else:
-            assert (predicted.max() < self.num_classes) and (predicted.min() >= 0), \
-                'Predicted values are not between 0 and k-1'
+            assert (predicted.max() < self.num_classes) and (
+                predicted.min() >= 0
+            ), "Predicted values are not between 0 and k-1"
 
         # If target is not a 1D array, convert one-hot encoding to class indices
         if np.ndim(target) != 1:
-            assert target.shape[1] == self.num_classes, \
-                'One-hot target does not match size of confusion matrix'
-            assert (target >= 0).all() and (target <= 1).all(), \
-                'In one-hot encoding, target values should be 0 or 1'
-            assert (target.sum(axis=1) == 1).all(), \
-                'Multi-label setting is not supported'
+            assert (
+                target.shape[1] == self.num_classes
+            ), "One-hot target does not match size of confusion matrix"
+            assert (target >= 0).all() and (
+                target <= 1
+            ).all(), "In one-hot encoding, target values should be 0 or 1"
+            assert (target.sum(axis=1) == 1).all(), "Multi-label setting is not supported"
             target = np.argmax(target, axis=1)
         else:
-            assert (target.max() < self.num_classes) and (target.min() >= 0), \
-                'Target values are not between 0 and k-1'
+            assert (target.max() < self.num_classes) and (
+                target.min() >= 0
+            ), "Target values are not between 0 and k-1"
 
-        # flatten target and predictions 
+        # flatten target and predictions
         predicted = predicted.flatten()
         target = target.flatten()
         # Compute confusion matrix for the batch
         x = predicted + self.num_classes * target
-        bincount_2d = np.bincount(
-            x.astype(np.int32), minlength=self.num_classes**2)
+        bincount_2d = np.bincount(x.astype(np.int32), minlength=self.num_classes**2)
         assert bincount_2d.size == self.num_classes**2
         conf = bincount_2d.reshape((self.num_classes, self.num_classes))
 

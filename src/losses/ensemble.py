@@ -1,12 +1,14 @@
+from typing import List, Optional
+
 import torch
 from torch.nn.modules.loss import _Loss
-from typing import List, Optional
+
 
 class Ensemble(_Loss):
     def __init__(
         self,
         list_losses: Optional[List[_Loss]] = None,
-        weights: Optional[List[float]] = None
+        weights: Optional[List[float]] = None,
     ):
         super().__init__()
         self.list_losses = list_losses or []
@@ -29,7 +31,7 @@ class Ensemble(_Loss):
     def forward(self, inputs: torch.Tensor, targets: torch.Tensor) -> torch.Tensor:
         """
         Computes the weighted ensemble loss.
-        
+
         :param inputs: Predictions from the model.
         :param targets: Ground truth labels.
         :return: Weighted ensemble loss.
@@ -38,5 +40,5 @@ class Ensemble(_Loss):
         for weight, loss_fn in zip(self.weights, self.list_losses):
             loss = loss_fn(inputs, targets)
             total_loss += weight * loss
-        
+
         return total_loss
