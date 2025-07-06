@@ -16,6 +16,7 @@ class TverskyLoss(DiceLoss):
     It supports binary, multiclass and multilabel cases
 
     Args:
+    ----
         mode: Metric mode {'binary', 'multiclass', 'multilabel'}
         classes: Optional list of classes that contribute in loss computation;
         By default, all channels are included.
@@ -29,6 +30,7 @@ class TverskyLoss(DiceLoss):
         gamma: Constant that squares the error function. Defaults to ``1.0``
 
     Return:
+    ------
         loss: torch.Tensor
 
     """
@@ -36,11 +38,11 @@ class TverskyLoss(DiceLoss):
     def __init__(
         self,
         mode: str,
-        classes: List[int] = None,
+        classes: list[int] = None,
         log_loss: bool = False,
         from_logits: bool = True,
         smooth: float = 0.0,
-        ignore_index: Optional[int] = None,
+        ignore_index: int | None = None,
         eps: float = 1e-7,
         alpha: float = 0.5,
         beta: float = 0.5,

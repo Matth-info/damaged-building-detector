@@ -1,18 +1,11 @@
-import yaml
+from __future__ import annotations
 
-from src.datasets import Levir_cd_dataset
-from src.models import SiameseResNetUNet
+from pathlib import Path
+
+import yaml
 
 
 def read_config(path: str) -> dict[str, str]:
-    """load YAML file"""
-    with open(path) as file:
-        config = yaml.safe_load(file)
-    return config
-
-
-MODEL_MAPPER = {
-    "siamese_resnet_unet": SiameseResNetUNet,
-}
-
-DATASET_MAPPER = {"levir_cd": Levir_cd_dataset}
+    """Load YAML file."""
+    with Path.open(path) as file:
+        return yaml.safe_load(file)

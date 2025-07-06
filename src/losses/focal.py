@@ -14,16 +14,17 @@ class FocalLoss(_Loss):
     def __init__(
         self,
         mode: str,
-        alpha: Optional[float] = None,
-        gamma: Optional[float] = 2.0,
-        ignore_index: Optional[int] = None,
-        reduction: Optional[str] = "mean",
+        alpha: float | None = None,
+        gamma: float | None = 2.0,
+        ignore_index: int | None = None,
+        reduction: str | None = "mean",
         normalized: bool = False,
-        reduced_threshold: Optional[float] = None,
+        reduced_threshold: float | None = None,
     ):
         """Compute Focal loss
 
         Args:
+        ----
             mode: Loss mode 'binary', 'multiclass' or 'multilabel'
             alpha: Prior probability of having positive value in target.
             gamma: Power factor for dampening weight (focal strength).

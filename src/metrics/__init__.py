@@ -1,3 +1,5 @@
+"""Metric implementations from https://github.com/qubvel-org/segmentation_models.pytorch."""
+
 from .confusionmatrix import ConfusionMatrix
 from .functional import (
     accuracy,
@@ -20,31 +22,6 @@ from .functional import (
     specificity,
 )
 from .iou import IoU
-from .utils import compute_model_class_performance
-
-__all__ = [
-    "get_stats",
-    "fbeta_score",
-    "f1_score",
-    "iou_score",
-    "accuracy",
-    "precision",
-    "recall",
-    "sensitivity",
-    "specificity",
-    "balanced_accuracy",
-    "positive_predictive_value",
-    "negative_predictive_value",
-    "false_negative_rate",
-    "false_positive_rate",
-    "false_discovery_rate",
-    "false_omission_rate",
-    "positive_likelihood_ratio",
-    "negative_likelihood_ratio",
-    "compute_model_class_performance",
-    "ConfusionMatrix",
-    "IoU",
-]
 
 METRICS_MAP = {
     "accuracy": accuracy,

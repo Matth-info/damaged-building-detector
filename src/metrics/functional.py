@@ -1,11 +1,12 @@
 """Various metrics based on Type I and Type II errors.
 
 References:
+----------
     https://en.wikipedia.org/wiki/Confusion_matrix
 
 
 Example:
-
+-------
     .. code-block:: python
 
         import segmentation_models_pytorch as smp
@@ -27,30 +28,32 @@ Example:
 
 """
 
+from __future__ import annotations
+
 import warnings
 from typing import List, Optional, Tuple, Union
 
 import torch
 
 __all__ = [
-    "get_stats",
-    "fbeta_score",
-    "f1_score",
-    "iou_score",  # Measures the overlap between predicted and ground truth regions.
     "accuracy",  # Measures the proportion of correctly predicted pixels.
+    "balanced_accuracy",  # Combines sensitivity (recall) and specificity, providing a balanced view across classes.
+    "f1_score",
+    "false_discovery_rate",
+    "false_negative_rate",  # Measures the proportion of missed detections among positives.
+    "false_omission_rate",
+    "false_positive_rate",  # Measures the proportion of false alarms among negative samples.
+    "fbeta_score",
+    "get_stats",
+    "iou_score",  # Measures the overlap between predicted and ground truth regions.
+    "negative_likelihood_ratio",
+    "negative_predictive_value",
+    "positive_likelihood_ratio",
+    "positive_predictive_value",
     "precision",  # Indicates the proportion of predicted positives that are actual positives.
     "recall",  # Indicates the proportion of actual positives that are correctly predicted.
     "sensitivity",
     "specificity",  # Measures the ability to avoid false positives (correctly identifying negatives).
-    "balanced_accuracy",  # Combines sensitivity (recall) and specificity, providing a balanced view across classes.
-    "positive_predictive_value",
-    "negative_predictive_value",
-    "false_negative_rate",  # Measures the proportion of missed detections among positives.
-    "false_positive_rate",  # Measures the proportion of false alarms among negative samples.
-    "false_discovery_rate",
-    "false_omission_rate",
-    "positive_likelihood_ratio",
-    "negative_likelihood_ratio",
 ]
 
 
@@ -60,17 +63,18 @@ __all__ = [
 
 
 def get_stats(
-    output: Union[torch.LongTensor, torch.FloatTensor],
+    output: torch.LongTensor | torch.FloatTensor,
     target: torch.LongTensor,
     mode: str,
-    ignore_index: Optional[int] = None,
-    threshold: Optional[Union[float, List[float]]] = None,
-    num_classes: Optional[int] = None,
-) -> Tuple[torch.LongTensor, torch.LongTensor, torch.LongTensor, torch.LongTensor]:
+    ignore_index: int | None = None,
+    threshold: float | list[float | None] | None = None,
+    num_classes: int | None = None,
+) -> tuple[torch.LongTensor, torch.LongTensor, torch.LongTensor, torch.LongTensor]:
     """Compute true positive, false positive, false negative, true negative 'pixels'
     for each image and each class.
 
     Args:
+    ----
         output (Union[torch.LongTensor, torch.FloatTensor]): Model output with following
             shapes and types depending on the specified ``mode``:
 
@@ -95,40 +99,41 @@ def get_stats(
                 shape (N, ...)
 
         mode (str): One of ``'binary'`` | ``'multilabel'`` | ``'multiclass'``
-        ignore_index (Optional[int]): Label to ignore on for metric computation.
+        ignore_index (int | None): Label to ignore on for metric computation.
             **Not** supported for ``'binary'`` and ``'multilabel'`` modes.  Defaults to None.
-        threshold (Optional[float, List[float]]): Binarization threshold for
+        threshold (float, list[float | None]): Binarization threshold for
             ``output`` in case of ``'binary'`` or ``'multilabel'`` modes. Defaults to None.
-        num_classes (Optional[int]): Number of classes, necessary attribute
+        num_classes (int | None): Number of classes, necessary attribute
             only for ``'multiclass'`` mode. Class values should be in range 0..(num_classes - 1).
             If ``ignore_index`` is specified it should be outside the classes range, e.g. ``-1`` or
             ``255``.
 
     Raises:
+    ------
         ValueError: in case of misconfiguration.
 
     Returns:
-        Tuple[torch.LongTensor]: true_positive, false_positive, false_negative,
+    -------
+        tuple[torch.LongTensor]: true_positive, false_positive, false_negative,
             true_negative tensors (N, C) shape each.
 
     """
-
     if torch.is_floating_point(target):
         raise ValueError(f"Target should be one of the integer types, got {target.dtype}.")
 
     if torch.is_floating_point(output) and threshold is None:
         raise ValueError(
-            f"Output should be one of the integer types if ``threshold`` is not None, got {output.dtype}."
+            f"Output should be one of the integer types if ``threshold`` is not None, got {output.dtype}.",
         )
 
     if torch.is_floating_point(output) and mode == "multiclass":
         raise ValueError(
-            f"For ``multiclass`` mode ``output`` should be one of the integer types, got {output.dtype}."
+            f"For ``multiclass`` mode ``output`` should be one of the integer types, got {output.dtype}.",
         )
 
     if mode not in {"binary", "multiclass", "multilabel"}:
         raise ValueError(
-            f"``mode`` should be in ['binary', 'multiclass', 'multilabel'], got mode={mode}."
+            f"``mode`` should be in ['binary', 'multiclass', 'multilabel'], got mode={mode}.",
         )
 
     if mode == "multiclass" and threshold is not None:
@@ -137,7 +142,7 @@ def get_stats(
     if output.shape != target.shape:
         raise ValueError(
             "Dimensions should match, but ``output`` shape is not equal to ``target`` "
-            + f"shape, {output.shape} != {target.shape}"
+            + f"shape, {output.shape} != {target.shape}",
         )
 
     if mode != "multiclass" and ignore_index is not None:
@@ -151,7 +156,7 @@ def get_stats(
             f"``ignore_index`` should be outside the class values range, but got class values in range "
             f"0..{num_classes - 1} and ``ignore_index={ignore_index}``. Hint: if you have ``ignore_index = 0``"
             f"consirder subtracting ``1`` from your target and model output to make ``ignore_index = -1``"
-            f"and relevant class values started from ``0``."
+            f"and relevant class values started from ``0``.",
         )
 
     if mode == "multiclass":
@@ -170,8 +175,8 @@ def _get_stats_multiclass(
     output: torch.LongTensor,
     target: torch.LongTensor,
     num_classes: int,
-    ignore_index: Optional[int],
-) -> Tuple[torch.LongTensor, torch.LongTensor, torch.LongTensor, torch.LongTensor]:
+    ignore_index: int | None,
+) -> tuple[torch.LongTensor, torch.LongTensor, torch.LongTensor, torch.LongTensor]:
     batch_size, *dims = output.shape
     num_elements = torch.prod(torch.tensor(dims)).long()
 
@@ -207,8 +212,9 @@ def _get_stats_multiclass(
 
 @torch.no_grad()
 def _get_stats_multilabel(
-    output: torch.LongTensor, target: torch.LongTensor
-) -> Tuple[torch.LongTensor, torch.LongTensor, torch.LongTensor, torch.LongTensor]:
+    output: torch.LongTensor,
+    target: torch.LongTensor,
+) -> tuple[torch.LongTensor, torch.LongTensor, torch.LongTensor, torch.LongTensor]:
     batch_size, num_classes, *dims = target.shape
     output = output.view(batch_size, num_classes, -1)
     target = target.view(batch_size, num_classes, -1)
@@ -242,8 +248,8 @@ def _compute_metric(
     fp,
     fn,
     tn,
-    reduction: Optional[str] = None,
-    class_weights: Optional[List[float]] = None,
+    reduction: str | None = None,
+    class_weights: list[float | None] = None,
     zero_division="warn",
     **metric_kwargs,
 ) -> float:
@@ -300,7 +306,7 @@ def _compute_metric(
     else:
         raise ValueError(
             "`reduction` should be in [micro, macro, weighted, micro-imagewise,"
-            + "macro-imagesize, weighted-imagewise, none, None]"
+            + "macro-imagesize, weighted-imagewise, none, None]",
         )
 
     return score
@@ -374,9 +380,9 @@ def fbeta_score(
     fn: torch.LongTensor,
     tn: torch.LongTensor,
     beta: float = 1.0,
-    reduction: Optional[str] = None,
-    class_weights: Optional[List[float]] = None,
-    zero_division: Union[str, float] = 1.0,
+    reduction: str | None = None,
+    class_weights: list[float | None] = None,
+    zero_division: str | float = 1.0,
 ) -> torch.Tensor:
     """F beta score"""
     return _compute_metric(
@@ -397,9 +403,9 @@ def f1_score(
     fp: torch.LongTensor,
     fn: torch.LongTensor,
     tn: torch.LongTensor,
-    reduction: Optional[str] = None,
-    class_weights: Optional[List[float]] = None,
-    zero_division: Union[str, float] = 1.0,
+    reduction: str | None = None,
+    class_weights: list[float | None] = None,
+    zero_division: str | float = 1.0,
 ) -> torch.Tensor:
     """F1 score"""
     return _compute_metric(
@@ -420,9 +426,9 @@ def iou_score(
     fp: torch.LongTensor,
     fn: torch.LongTensor,
     tn: torch.LongTensor,
-    reduction: Optional[str] = None,
-    class_weights: Optional[List[float]] = None,
-    zero_division: Union[str, float] = 1.0,
+    reduction: str | None = None,
+    class_weights: list[float | None] = None,
+    zero_division: str | float = 1.0,
 ) -> torch.Tensor:
     """IoU score or Jaccard index"""  # noqa
     return _compute_metric(
@@ -442,9 +448,9 @@ def accuracy(
     fp: torch.LongTensor,
     fn: torch.LongTensor,
     tn: torch.LongTensor,
-    reduction: Optional[str] = None,
-    class_weights: Optional[List[float]] = None,
-    zero_division: Union[str, float] = 1.0,
+    reduction: str | None = None,
+    class_weights: list[float | None] = None,
+    zero_division: str | float = 1.0,
 ) -> torch.Tensor:
     """Accuracy"""
     return _compute_metric(
@@ -464,9 +470,9 @@ def sensitivity(
     fp: torch.LongTensor,
     fn: torch.LongTensor,
     tn: torch.LongTensor,
-    reduction: Optional[str] = None,
-    class_weights: Optional[List[float]] = None,
-    zero_division: Union[str, float] = 1.0,
+    reduction: str | None = None,
+    class_weights: list[float | None] = None,
+    zero_division: str | float = 1.0,
 ) -> torch.Tensor:
     """Sensitivity, recall, hit rate, or true positive rate (TPR)"""
     return _compute_metric(
@@ -486,9 +492,9 @@ def specificity(
     fp: torch.LongTensor,
     fn: torch.LongTensor,
     tn: torch.LongTensor,
-    reduction: Optional[str] = None,
-    class_weights: Optional[List[float]] = None,
-    zero_division: Union[str, float] = 1.0,
+    reduction: str | None = None,
+    class_weights: list[float | None] = None,
+    zero_division: str | float = 1.0,
 ) -> torch.Tensor:
     """Specificity, selectivity or true negative rate (TNR)"""
     return _compute_metric(
@@ -508,9 +514,9 @@ def balanced_accuracy(
     fp: torch.LongTensor,
     fn: torch.LongTensor,
     tn: torch.LongTensor,
-    reduction: Optional[str] = None,
-    class_weights: Optional[List[float]] = None,
-    zero_division: Union[str, float] = 1.0,
+    reduction: str | None = None,
+    class_weights: list[float | None] = None,
+    zero_division: str | float = 1.0,
 ) -> torch.Tensor:
     """Balanced accuracy"""
     return _compute_metric(
@@ -530,9 +536,9 @@ def positive_predictive_value(
     fp: torch.LongTensor,
     fn: torch.LongTensor,
     tn: torch.LongTensor,
-    reduction: Optional[str] = None,
-    class_weights: Optional[List[float]] = None,
-    zero_division: Union[str, float] = 1.0,
+    reduction: str | None = None,
+    class_weights: list[float | None] = None,
+    zero_division: str | float = 1.0,
 ) -> torch.Tensor:
     """Precision or positive predictive value (PPV)"""
     return _compute_metric(
@@ -552,9 +558,9 @@ def negative_predictive_value(
     fp: torch.LongTensor,
     fn: torch.LongTensor,
     tn: torch.LongTensor,
-    reduction: Optional[str] = None,
-    class_weights: Optional[List[float]] = None,
-    zero_division: Union[str, float] = 1.0,
+    reduction: str | None = None,
+    class_weights: list[float | None] = None,
+    zero_division: str | float = 1.0,
 ) -> torch.Tensor:
     """Negative predictive value (NPV)"""
     return _compute_metric(
@@ -574,9 +580,9 @@ def false_negative_rate(
     fp: torch.LongTensor,
     fn: torch.LongTensor,
     tn: torch.LongTensor,
-    reduction: Optional[str] = None,
-    class_weights: Optional[List[float]] = None,
-    zero_division: Union[str, float] = 1.0,
+    reduction: str | None = None,
+    class_weights: list[float | None] = None,
+    zero_division: str | float = 1.0,
 ) -> torch.Tensor:
     """Miss rate or false negative rate (FNR)"""
     return _compute_metric(
@@ -596,9 +602,9 @@ def false_positive_rate(
     fp: torch.LongTensor,
     fn: torch.LongTensor,
     tn: torch.LongTensor,
-    reduction: Optional[str] = None,
-    class_weights: Optional[List[float]] = None,
-    zero_division: Union[str, float] = 1.0,
+    reduction: str | None = None,
+    class_weights: list[float | None] = None,
+    zero_division: str | float = 1.0,
 ) -> torch.Tensor:
     """Fall-out or false positive rate"""
     return _compute_metric(
@@ -618,9 +624,9 @@ def false_discovery_rate(
     fp: torch.LongTensor,
     fn: torch.LongTensor,
     tn: torch.LongTensor,
-    reduction: Optional[str] = None,
-    class_weights: Optional[List[float]] = None,
-    zero_division: Union[str, float] = 1.0,
+    reduction: str | None = None,
+    class_weights: list[float | None] = None,
+    zero_division: str | float = 1.0,
 ) -> torch.Tensor:
     """False discovery rate (FDR)"""  # noqa
     return _compute_metric(
@@ -640,9 +646,9 @@ def false_omission_rate(
     fp: torch.LongTensor,
     fn: torch.LongTensor,
     tn: torch.LongTensor,
-    reduction: Optional[str] = None,
-    class_weights: Optional[List[float]] = None,
-    zero_division: Union[str, float] = 1.0,
+    reduction: str | None = None,
+    class_weights: list[float | None] = None,
+    zero_division: str | float = 1.0,
 ) -> torch.Tensor:
     """False omission rate (FOR)"""  # noqa
     return _compute_metric(
@@ -662,9 +668,9 @@ def positive_likelihood_ratio(
     fp: torch.LongTensor,
     fn: torch.LongTensor,
     tn: torch.LongTensor,
-    reduction: Optional[str] = None,
-    class_weights: Optional[List[float]] = None,
-    zero_division: Union[str, float] = 1.0,
+    reduction: str | None = None,
+    class_weights: list[float | None] = None,
+    zero_division: str | float = 1.0,
 ) -> torch.Tensor:
     """Positive likelihood ratio (LR+)"""
     return _compute_metric(
@@ -684,9 +690,9 @@ def negative_likelihood_ratio(
     fp: torch.LongTensor,
     fn: torch.LongTensor,
     tn: torch.LongTensor,
-    reduction: Optional[str] = None,
-    class_weights: Optional[List[float]] = None,
-    zero_division: Union[str, float] = 1.0,
+    reduction: str | None = None,
+    class_weights: list[float | None] = None,
+    zero_division: str | float = 1.0,
 ) -> torch.Tensor:
     """Negative likelihood ratio (LR-)"""
     return _compute_metric(
@@ -708,7 +714,7 @@ _doc = """
         fp (torch.LongTensor): tensor of shape (N, C), false positive cases
         fn (torch.LongTensor): tensor of shape (N, C), false negative cases
         tn (torch.LongTensor): tensor of shape (N, C), true negative cases
-        reduction (Optional[str]): Define how to aggregate metric between classes and images:
+        reduction (str | None): Define how to aggregate metric between classes and images:
 
             - 'micro'
                 Sum true positive, false positive, false negative and true negative pixels over
@@ -747,9 +753,9 @@ _doc = """
             Prefixes ``'micro'``, ``'macro'`` and ``'weighted'`` define how the scores for classes will be aggregated,
             while postfix ``'imagewise'`` defines how scores between the images will be aggregated.
 
-        class_weights (Optional[List[float]]): list of class weights for metric
+        class_weights (list[float | None]): list of class weights for metric
             aggregation, in case of `weighted*` reduction is chosen. Defaults to None.
-        zero_division (Union[str, float]): Sets the value to return when there is a zero division,
+        zero_division (str | float): Sets the value to return when there is a zero division,
             i.e. when all predictions and labels are negative. If set to “warn”, this acts as 0,
             but warnings are also raised. Defaults to 1.
 

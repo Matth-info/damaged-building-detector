@@ -1,0 +1,1 @@
+This implementation of Conformal Prediction for Semantic Segmentation is highly inspired by the deel-ai implementation available at https://github.com/deel-ai-papers/conformal-segmentation. A pytorch version has been implemented in the [cose](/src/explanability/cose) folder (COSE : COnformal SEgmentation)

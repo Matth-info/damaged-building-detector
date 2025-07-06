@@ -1,64 +1,194 @@
-from pathlib import Path
-from typing import Dict, List, Optional
+from __future__ import annotations
 
-import albumentations as A
+from pathlib import Path
+from typing import Dict, List, Literal, Optional, Union
+
 import torch
 from torch.utils.data import Dataset
 
+from src.augmentation import Augmentation_pipeline
 
-class Building_Dataset(Dataset):
-    """General Class for Building Related Pytorch Dataset"""
+
+class BuildingDataset(Dataset):
+    """General Class for Building-Related PyTorch Dataset.
+
+    Attributes:
+    ----------
+        origin_dir (Path): Path to the dataset folder.
+        dataset_type (str): Dataset type ('train', 'val', 'test', 'infer').
+        transform (Augmentation_pipeline | None): Custom augmentation pipeline.
+        n_classes (int): Number of different classes.
+
+    """
 
     MEAN = None
     STD = None
 
-    def __init__(self, origin_dir: str, type: str = None, transform: Optional[A.Compose] = None):
+    def __init__(
+        self,
+        origin_dir: str | Path,
+        dataset_type: Literal["train", "val", "test", "infer"],
+        transform: Augmentation_pipeline | None = None,
+        n_classes: int | None = None,
+    ) -> None:
+        """Initialize the BuildingDataset class.
+
+        Args:
+        ----
+            origin_dir (str | Path): Path to the dataset folder.
+            dataset_type (str): Dataset type ('train', 'val', 'test', 'infer').
+            transform (Augmentation_pipeline | None): Custom augmentation pipeline.
+            n_classes (int | None): Number of different classes.
+
+        """
         self.origin_dir = Path(origin_dir)
-
-        assert type in [
-            "train",
-            "val",
-            "test",
-            "infer",
-        ], "Dataset must be 'train','val', 'test' or 'infer"
-        self.type = type
+        self.dataset_type = dataset_type
         self.transform = transform
+        self.n_classes = n_classes
 
-    def __repr__(self):
-        return f"Dataset class : {self.__class__.__name__()} / Type : {self.type} / Number of samples : {len(self)}"
+    def __repr__(self) -> str:
+        """Return a string representation of the dataset.
 
-    def display_data(self, list_indices: List[int]) -> None:
-        # This method should be implemented by subclasses
-        raise NotImplementedError("Subclasses must implement this method")
+        Returns:
+        -------
+            str: String representation of the dataset.
 
-    def display_img(self, idx, **kwars) -> None:
-        raise NotImplementedError("Subclasses must implement this method")
+        """
+        return (
+            f"Dataset class: {self.__class__.__name__} / "
+            f"Type: {self.dataset_type} / "
+            f"Number of samples: {len(self)} / "
+            f"Number of classes: {self.n_classes}"
+        )
 
-    def __getitem__(self, index) -> Dict[str, torch.tensor]:
-        raise NotImplementedError("Pytorch Dataset Subclasses must implement this method")
+    def display_data(self, list_indices: list[int]) -> None:
+        """Display data for the given indices.
+
+        Args:
+        ----
+            list_indices (list[int]): List of indices to display.
+
+        """
+        raise NotImplementedError("Subclasses must implement this method.")
+
+    def display_img(self, idx: int, **kwargs: object) -> None:
+        """Display an image for the given index.
+
+        Args:
+        ----
+            idx (int): Index of the image to display.
+            **kwargs: Additional keyword arguments for display customization.
+
+        """
+        raise NotImplementedError("Subclasses must implement this method.")
+
+    def __getitem__(self, index: int) -> dict[str, torch.Tensor]:
+        """Retrieve an item from the dataset.
+
+        Args:
+        ----
+            index (int): Index of the item to retrieve.
+
+        Returns:
+        -------
+            dict[str, torch.Tensor]: Dictionary containing the data.
+
+        """
+        raise NotImplementedError("Subclasses must implement this method.")
 
     def __len__(self) -> int:
-        raise NotImplementedError("Pytorch Dataset Subclasses must implement this method")
+        """Return the length of the dataset.
+
+        Returns:
+        -------
+            int: Number of samples in the dataset.
+
+        """
+        raise NotImplementedError("Subclasses must implement this method.")
 
 
-class Cloud_Dataset(Dataset):
-    """General Class for Cloud Related Pytorch Dataset"""
+class CloudDataset(Dataset):
+    """General Class for Cloud-Related PyTorch Dataset.
 
-    def __init__(self, bands: List[str]):
+    Attributes:
+    ----------
+        bands (list[str]): List of bands used in the dataset.
+
+    """
+
+    def __init__(self, bands: list[str]) -> None:
+        """Initialize the CloudDataset class.
+
+        Args:
+        ----
+            bands (list[str]): List of bands used in the dataset.
+
+        """
         super().__init__()
         self.bands = bands
 
 
-class Segmentation_Dataset(Building_Dataset):
-    def __init__(self, origin_dir, type=None, transform=None):
-        super().__init__(origin_dir, type, transform)
+class SegmentationDataset(BuildingDataset):
+    """Dataset class for segmentation tasks."""
+
+    def __init__(
+        self,
+        origin_dir: str | Path,
+        dataset_type: str | None = None,
+        transform: Augmentation_pipeline | None = None,
+        n_classes: int | None = None,
+    ) -> None:
+        """Initialize the SegmentationDataset class.
+
+        Args:
+            origin_dir (str | Path): Path to the dataset folder.
+            dataset_type (str | None): Dataset type ('train', 'val', 'test', 'infer').
+            transform (Augmentation_pipeline | None): Custom augmentation pipeline.
+            n_classes (int | None): Number of different classes.
+
+        """
+        super().__init__(origin_dir, dataset_type, transform, n_classes)
 
 
-class Change_Detection_Dataset(Building_Dataset):
-    def __init__(self, origin_dir, type=None, transform=None):
-        super().__init__(origin_dir, type, transform)
+class ChangeDetectionDataset(BuildingDataset):
+    """Dataset class for change detection tasks."""
+
+    def __init__(
+        self,
+        origin_dir: str | Path,
+        dataset_type: str | None = None,
+        transform: Augmentation_pipeline | None = None,
+        n_classes: int | None = None,
+    ) -> None:
+        """Initialize the ChangeDetectionDataset class.
+
+        Args:
+            origin_dir (str | Path): Path to the dataset folder.
+            dataset_type (str | None): Dataset type ('train', 'val', 'test', 'infer').
+            transform (Augmentation_pipeline | None): Custom augmentation pipeline.
+            n_classes (int | None): Number of different classes.
+
+        """
+        super().__init__(origin_dir, dataset_type, transform, n_classes)
 
 
-class Instance_Segmentation_Dataset(Building_Dataset):
-    def __init__(self, origin_dir, type=None, transform=None):
-        super().__init__(origin_dir, type, transform)
+class InstanceSegmentationDataset(BuildingDataset):
+    """Dataset class for instance segmentation tasks."""
+
+    def __init__(
+        self,
+        origin_dir: str | Path,
+        dataset_type: str | None = None,
+        transform: Augmentation_pipeline | None = None,
+        n_classes: int | None = None,
+    ) -> None:
+        """Initialize the InstanceSegmentationDataset class.
+
+        Args:
+            origin_dir (str | Path): Path to the dataset folder.
+            dataset_type (str | None): Dataset type ('train', 'val', 'test', 'infer').
+            transform (Augmentation_pipeline | None): Custom augmentation pipeline.
+            n_classes (int | None): Number of different classes.
+
+        """
+        super().__init__(origin_dir, dataset_type, transform, n_classes)

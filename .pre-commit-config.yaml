@@ -5,7 +5,6 @@ repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v4.4.0
     hooks:
-      # list of supported hooks: https://pre-commit.com/hooks.html
       - id: trailing-whitespace
       - id: end-of-file-fixer
       - id: check-yaml
@@ -18,40 +17,17 @@ repos:
       - id: check-case-conflict
       - id: check-added-large-files
 
-  # python code formatting
-  - repo: https://github.com/psf/black
-    rev: 23.1.0
+  # Ruff: Python linter, formatter, import sorter, etc.
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.4.4
     hooks:
-      - id: black
-        args: [--line-length, "99"]
-
-  # python import sorting
-  - repo: https://github.com/PyCQA/isort
-    rev: 5.12.0
-    hooks:
-      - id: isort
-        args: ["--profile", "black", "--filter-files"]
-
-  # python upgrading syntax to newer version
-  - repo: https://github.com/asottile/pyupgrade
-    rev: v3.3.1
-    hooks:
-      - id: pyupgrade
-        args: [--py38-plus]
-
-  # python check (PEP8), programming errors and code complexity
-  - repo: https://github.com/PyCQA/flake8
-    rev: 6.0.0
-    hooks:
-      - id: flake8
-        args:
-          [
-            "--extend-ignore",
-            "E203,E402,E231,E501,F401,F841,RST2,RST301,RST304",
-            "--exclude",
-            "logs/*,data/*,models/*",
-          ]
-        additional_dependencies: [flake8-rst-docstrings==0.3.0]
+      # Run the linter. (100x faster than flake8)
+      - id: ruff
+        types_or: [python, pyi]
+        args: ["--line-length=99", "--fix"]
+      # Run the formatter.
+      - id: ruff-format
+        types_or: [python, pyi]
 
   # python security linter
   - repo: https://github.com/PyCQA/bandit
@@ -59,6 +35,7 @@ repos:
     hooks:
       - id: bandit
         args: ["-s", "B101"]
+        skips: ["B311:blacklist"]
 
   # yaml formatting
   - repo: https://github.com/pre-commit/mirrors-prettier
@@ -81,7 +58,6 @@ repos:
       - id: codespell
         args:
           - --skip=logs/**,data/**,*.ipynb
-          # - --ignore-words-list=abc,def
 
   # jupyter notebook cell output clearing
   - repo: https://github.com/kynan/nbstripout

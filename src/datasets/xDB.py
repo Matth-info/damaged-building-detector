@@ -1,6 +1,9 @@
+from __future__ import annotations
+
 import json
+import logging
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import TYPE_CHECKING, ClassVar, Literal
 
 import albumentations as A
 import cv2
@@ -17,11 +20,12 @@ from torchvision.transforms.functional import to_pil_image
 from torchvision.transforms.v2 import functional as F
 from torchvision.utils import draw_bounding_boxes, draw_segmentation_masks
 
-from .base import (
-    Change_Detection_Dataset,
-    Instance_Segmentation_Dataset,
-    Segmentation_Dataset,
-)
+from src.datasets.utils import train_val_test_split
+
+from .base import ChangeDetectionDataset, InstanceSegmentationDataset, SegmentationDataset
+
+if TYPE_CHECKING:
+    from src.augmentation import Augmentation_pipeline
 
 # Color codes for polygons
 damage_dict = {
@@ -34,89 +38,95 @@ damage_dict = {
 
 
 # Segmentation Dataset #
-class xDB_Damaged_Building(Segmentation_Dataset):
-    MEAN = [0.349, 0.354, 0.268]
-    STD = [0.114, 0.102, 0.094]
+class xDBDamagedBuilding(SegmentationDataset):
+    """xDB Damage Building Dataset. From xDB Dataset, a semantic segmentation task dataset for single image damage building detection."""
+
+    MEAN: ClassVar[list[float]] = [0.349, 0.354, 0.268]
+    STD: ClassVar[list[float]] = [0.114, 0.102, 0.094]
 
     def __init__(
         self,
         origin_dir: str,
-        mode="building",
-        time="pre",
-        transform: Optional[A.Compose] = None,
-        type: str = "train",
-        val_ratio=0.1,
-        test_ratio=0.1,
+        mode: Literal["building", "damage"] = "building",
+        time: Literal["pre", "post"] = "pre",
+        transform: Augmentation_pipeline | None = None,
+        dataset_type: str = "train",
+        n_classes: int | None = None,
+        val_ratio: float = 0.1,
+        test_ratio: float = 0.1,
         seed: int = 42,
-        **kwargs,
-    ):
-        assert type in [
-            "train",
-            "val",
-            "test",
-        ], "Dataset must be 'train','val' or 'test'"
-        self.type = type
-        np.random.seed(seed=seed)
+        **kwargs: object,
+    ) -> None:
+        """Initialize the xDBDamagedBuilding dataset.
+
+        Args:
+        origin_dir : str
+            Directory containing the dataset.
+        mode : str, optional
+            "building" or "damage" to determine the dataset_type of masks to load.
+        time : str, optional
+            Temporal filter for the dataset (e.g., "pre" or "post").
+        transform : Augmentation_pipeline | None, optional
+            Optional transformation to apply on images and masks.
+        dataset_type : str, optional
+            "train", "val", or "test" to determine the dataset split.
+        n_classes : int, optional
+            Number of classes for segmentation.
+        val_ratio : float, optional
+            Fraction of the dataset to use for validation.
+        test_ratio : float, optional
+            Fraction of the dataset to use for testing.
+        seed : int, optional
+            Random seed for reproducibility.
+        **kwargs:
+            Additional keyword arguments.
+        """
+        super().__init__(
+            origin_dir=origin_dir,
+            dataset_type=dataset_type,
+            transform=transform,
+            n_classes=n_classes,
+        )
+        np.random.default_rng(seed=seed)
+
         self.label_dir = Path(origin_dir) / "labels"
-        assert mode in ["building", "damage"], "Mode must be 'building' or 'damage'."
         self.mode = mode
         self.time = time
         self.list_labels = [str(x) for x in self.label_dir.rglob(pattern=f"*{self.time}_*.json")]
-        self.transform = transform
-
         self.val_ratio = val_ratio
         self.test_ratio = test_ratio
+        self.n_classes = 2 if mode == "building" else 5
 
         self._split()  # perform a split datases train, val, test
 
-    def _split(self):
-        # Calculate the size of each split
-        total_size = len(self.list_labels)
-        test_size = int(total_size * self.test_ratio)
-        val_size = int(total_size * self.val_ratio)
-        train_size = total_size - test_size - val_size
+    def _split(self) -> None:
+        self.list_labels = train_val_test_split(
+            self.list_labels,
+            val_size=self.val_ratio,
+            test_size=self.test_ratio,
+            dataset_type=self.dataset_type,
+        )
 
-        # Shuffle indices for random splits
-        indices = np.random.permutation(total_size)
+    def __getitem__(self, index: int) -> dict[str, torch.tensor]:
+        """Retrieve an image and its corresponding mask for semantic segmentation.
 
-        # Split indices
-        train_indices = indices[:train_size]
-        val_indices = indices[train_size : train_size + val_size]
-        test_indices = indices[train_size + val_size :]
-
-        # Now, depending on self.type, choose which split to use
-        if self.type == "train":
-            self.list_labels = [self.list_labels[i] for i in train_indices]
-        elif self.type == "val":
-            self.list_labels = [self.list_labels[i] for i in val_indices]
-        elif self.type == "test":
-            self.list_labels = [self.list_labels[i] for i in test_indices]
-        else:
-            raise ValueError("Unknown dataset type. Use 'train', 'val', or 'test'.")
-
-        # Now self.list_labels will contain the appropriate split based on self.type
-        print(f"Loaded {len(self.list_labels)} {self.type} labels.")
-
-    def __getitem__(self, index) -> Dict[str, torch.tensor]:
-        """
-        Retrieve an image and its corresponding mask for semantic segmentation.
-
-        Parameters:
+        Args:
             index (int): Index of the image-mask pair.
 
         Returns:
             dict: A dictionary containing:
-                - 'image': Transformed image as a torch tensor.
-                - 'mask': Corresponding mask as a torch tensor.
+                   'image': Transformed image as a torch tensor.
+                   'mask': Corresponding mask as a torch tensor.
+
         """
         # Get the JSON path for the given index
         json_path = self.list_labels[index]
 
         # Load the image
-        image = self.get_image(json_path)
+        image = self._get_image(json_path)
 
         # Load the mask
-        mask = self.get_mask(json_path, mode=self.mode)
+        mask = self._get_mask(json_path, mode=self.mode)
 
         # Apply transformations if defined
         if self.transform:
@@ -135,17 +145,16 @@ class xDB_Damaged_Building(Segmentation_Dataset):
         return {"image": image, "mask": mask}
 
     def __len__(self) -> int:
-        """Returns the total number of samples in the dataset."""
+        """Return the total number of samples in the dataset."""
         return len(self.list_labels)
 
-    def get_image(self, json_path) -> Image:
-        """
-        Open image file based on the json_path label file.
+    def _get_image(self, json_path: str) -> Image:
+        """Open image file based on the json_path label file.
 
         Image path example: ../images/joplin-tornado_00000000_post_disaster.png
         Label path example: ../labels/joplin-tornado_00000000_post_disaster.json
 
-        Parameters:
+        Args:
             json_path (str): Path to the label JSON file.
             time (str): "pre" for pre-disaster image, "post" for post-disaster image.
 
@@ -153,9 +162,10 @@ class xDB_Damaged_Building(Segmentation_Dataset):
             PIL.Image.Image: The corresponding image.
 
         Raises:
+        ------
             FileNotFoundError: If the image file is not found.
-        """
 
+        """
         # Adjust path for "pre" time if needed
         if self.time == "pre":
             json_path = json_path.replace("post", "pre")
@@ -165,26 +175,25 @@ class xDB_Damaged_Building(Segmentation_Dataset):
         # Open and return the image
         return Image.open(img_path)
 
-    def get_damage_type(self, properties) -> str:
+    def _get_damage_type(self, properties: dict) -> str:
         if "subtype" in properties:
             return properties["subtype"]
-        else:
-            return "no-damage"
+        return "no-damage"
 
-    def get_mask(self, label_path, mode="building") -> np.ndarray:
-        """
-        Build a mask from a label file.
+    def _get_mask(self, label_path: str, mode="building") -> np.ndarray:
+        """Build a mask from a label file.
 
-        Parameters:
+        Args:
             label_path (str): Path to the JSON label file.
             image_size (tuple): Size of the output mask (height, width).
             mode (str): "building" for binary mask, "damage" for multiclass mask.
 
         Returns:
             np.ndarray: Mask as a numpy array.
+
         """
         # Load JSON file
-        with open(label_path) as json_file:
+        with Path.open(label_path) as json_file:
             image_json = json.load(json_file)
 
         # Extract building polygons and their damage types
@@ -194,7 +203,7 @@ class xDB_Damaged_Building(Segmentation_Dataset):
         wkt_polygons = []
 
         for coord in coords:
-            damage = self.get_damage_type(coord["properties"])  # Get damage type
+            damage = self._get_damage_type(coord["properties"])  # Get damage dataset_type
             wkt_polygons.append((damage, coord["wkt"]))
 
         # Convert WKT to Shapely polygons
@@ -204,7 +213,9 @@ class xDB_Damaged_Building(Segmentation_Dataset):
 
         # Initialize the mask
         mask = Image.new(
-            "L", (image_height, image_width), 0
+            "L",
+            (image_height, image_width),
+            0,
         )  # 'L' mode for grayscale, initialized to 0
         draw = ImageDraw.Draw(mask)
 
@@ -229,10 +240,10 @@ class xDB_Damaged_Building(Segmentation_Dataset):
         # Convert mask to numpy array
         return np.array(mask)
 
-    def annotate_img(self, draw, coords):
+    def _annotate_img(self, draw: ImageDraw, coords: dict) -> None:
         wkt_polygons = []
         for coord in coords:
-            damage = self.get_damage_type(coord["properties"])
+            damage = self._get_damage_type(coord["properties"])
             wkt_polygons.append((damage, coord["wkt"]))
 
         polygons = []
@@ -247,14 +258,24 @@ class xDB_Damaged_Building(Segmentation_Dataset):
 
         del draw
 
-    def display_img(self, idx, time="pre", annotated=True):
+    def display_img(self, idx: int, time: str = "pre", annotated: bool = True) -> Image.Image:
+        """Display an image with optional annotation overlays.
+
+        Args:
+            idx (int): Index of the image to display.
+            time (str, optional): "pre" or "post" to select the temporal version of the image (default is "pre").
+            annotated (bool, optional): If True, overlays annotations on the image (default is True).
+
+        Returns:
+            out (PIL.Image.Image) : The image with or without annotations.
+        """
         json_path = self.list_labels[idx]
         if time == "pre":
             json_path = json_path.replace("post", "pre")
 
         img_path = json_path.replace("labels", "images").replace("json", "png")
 
-        with open(json_path) as json_file:
+        with Path.open(json_path) as json_file:
             image_json = json.load(json_file)
 
         # Read Image
@@ -262,10 +283,19 @@ class xDB_Damaged_Building(Segmentation_Dataset):
         draw = ImageDraw.Draw(img, "RGBA")
 
         if annotated:
-            self.annotate_img(draw=draw, coords=image_json["features"]["xy"])
+            self._annotate_img(draw=draw, coords=image_json["features"]["xy"])
         return img
 
-    def extract_metadata(self, idx, time="pre"):
+    def extract_metadata(self, idx: int, time: str = "pre"):
+        """Extract metadata.
+
+        Args:
+            idx (int): image index in Dataset
+            time (str, optional): period to extract metadata. Defaults to "pre".
+
+        Returns:
+            dict: Extracted corresponding metadata
+        """
         label_path = self.list_labels[idx]
 
         if time == "pre":
@@ -274,19 +304,22 @@ class xDB_Damaged_Building(Segmentation_Dataset):
             label_path = label_path.replace("pre", "post")
 
         # Load JSON file
-        with open(label_path) as json_file:
+        with Path.open(label_path) as json_file:
             image_json = json.load(json_file)
 
         return image_json["metadata"]
 
-    def display_data(self, list_ids: List[int], time="pre", annotated=True, cols=3):
-        """
-        Display a list of images with or without annotations.
+    def display_data(
+        self, list_ids: list[int], time: str = "pre", annotated: bool = True, cols: int = 3
+    ) -> None:
+        """Display a list of images with or without annotations.
 
-        Parameters:
-            list_ids (List[int]): List of indices of images to display.
+        Args:
+            list_ids (list[int]): List of indices of images to display.
+            time (str): Choose Timestamp ("pre" or "post").
             annotated (bool): If True, overlay annotations on the images.
             cols (int): Number of columns in the grid for displaying images.
+
         """
         # Number of images
         num_images = len(list_ids)
@@ -320,103 +353,104 @@ class xDB_Damaged_Building(Segmentation_Dataset):
         plt.tight_layout()
         plt.show()
 
-    def plot_image(self, idx, save=False):
+    def plot_image(self, idx: int, save: bool = False):
+        """Plot a sample with its pre, post disaster images and its mask labels.
+
+        Args:
+            idx (_type_): _description_
+            save (bool, optional): _description_. Defaults to False.
+        """
         # read images
-        img_A = self.display_img(idx, time="pre", annotated=False)
-        img_B = self.display_img(idx, time="post", annotated=False)
-        img_C = self.display_img(idx, time="pre", annotated=True)
-        img_D = self.display_img(idx, time="post", annotated=True)
+        img_a = self.display_img(idx, time="pre", annotated=False)
+        img_b = self.display_img(idx, time="post", annotated=False)
+        img_c = self.display_img(idx, time="pre", annotated=True)
+        img_d = self.display_img(idx, time="post", annotated=True)
 
         # display images
         fig, ax = plt.subplots(2, 2)
         fig.set_size_inches(30, 30)
-        TITLE_FONT_SIZE = 24
-        ax[0][0].imshow(img_A)
-        ax[0][0].set_title("Pre Disaster Image (Not Annotated)", fontsize=TITLE_FONT_SIZE)
-        ax[0][1].imshow(img_B)
-        ax[0][1].set_title("Post Disaster Image (Not Annotated)", fontsize=TITLE_FONT_SIZE)
-        ax[1][0].imshow(img_C)
-        ax[1][0].set_title("Pre Disaster Image (Annotated)", fontsize=TITLE_FONT_SIZE)
-        ax[1][1].imshow(img_D)
-        ax[1][1].set_title("Post Disaster Image (Annotated)", fontsize=TITLE_FONT_SIZE)
+        title_font_size = 24
+        ax[0][0].imshow(img_a)
+        ax[0][0].set_title("Pre Disaster Image (Not Annotated)", fontsize=title_font_size)
+        ax[0][1].imshow(img_b)
+        ax[0][1].set_title("Post Disaster Image (Not Annotated)", fontsize=title_font_size)
+        ax[1][0].imshow(img_c)
+        ax[1][0].set_title("Pre Disaster Image (Annotated)", fontsize=title_font_size)
+        ax[1][1].imshow(img_d)
+        ax[1][1].set_title("Post Disaster Image (Annotated)", fontsize=title_font_size)
         if save:
             plt.savefig("split_image.png", dpi=100)
         plt.show()
 
 
 # Change Detection Datasets #
-class xDB_Siamese_Dataset(Change_Detection_Dataset):
-    MEAN = [0.349, 0.354, 0.268]
-    STD = [0.114, 0.102, 0.094]
+class xDB_Siamese_Dataset(ChangeDetectionDataset):
+    """xDB Siamese Damage Building Dataset. From xDB Dataset, a semantic segmentation task dataset for bi temporal damage building detections."""
+
+    MEAN: ClassVar[list[float]] = [0.349, 0.354, 0.268]
+    STD: ClassVar[list[float]] = [0.114, 0.102, 0.094]
 
     def __init__(
         self,
         origin_dir: str,
-        mode="damage",
-        transform: Optional[A.Compose] = None,
-        type: str = "train",
-        val_ratio=0.1,
-        test_ratio=0.1,
+        mode: Literal[
+            "building", "full_damage", "simple_damage", "change_detection"
+        ] = "change_detection",
+        transform: Augmentation_pipeline = None,
+        dataset_type: str = "train",
+        val_ratio: float = 0.1,
+        test_ratio: float = 0.1,
         seed: int = 42,
-        **kwargs
-    ):
-     
-        assert type in [
-            "train",
-            "val",
-            "test",
-        ], "Dataset must be 'train', 'val' or 'test'"
-        self.type = type
-        np.random.seed(seed=seed)
+        n_classes: int | None = None,
+        **kwargs,
+    ) -> None:
+        """Initialize the xDB_Siamese_Dataset for change detection tasks.
+
+        Args:
+            origin_dir (str): Directory containing the dataset.
+            mode (Literal["building", "full_damage", "simple_damage", "change_detection"], optional):
+                Determines the type of mask to load. Defaults to "change_detection".
+            transform (Augmentation_pipeline, optional): Optional transformation to apply on images and masks.
+            dataset_type (str, optional): "train", "val", or "test" to determine the dataset split.
+            val_ratio (float, optional): Fraction of the dataset to use for validation.
+            test_ratio (float, optional): Fraction of the dataset to use for testing.
+            seed (int, optional): Random seed for reproducibility.
+            n_classes (int, optional): Number of classes for segmentation.
+            **kwargs: Additional keyword arguments.
+        """
+        super().__init__(
+            origin_dir, dataset_type=dataset_type, transform=transform, n_classes=n_classes
+        )
+        np.random.default_rng(seed=seed)
         self.label_dir = Path(origin_dir) / "labels"
-        assert mode in [
-            "building",
-            "full_damage",
-            "simple_damage",
-            "change_detection",
-        ], "Mode must be 'building', 'full_damage', 'simple_damage' or 'change_detection'"
         self.mode = mode
         self.list_labels = [str(x) for x in self.label_dir.rglob(pattern="*post_*.json")]
-        self.transform = transform
-
         self.val_ratio = val_ratio
         self.test_ratio = test_ratio
+        self.n_classes = (
+            len(set(self._get_classes(self.mode).values())) + 1
+        )  # +1 for background class
 
         self._split()  # Perform a split for train, val, and test datasets
 
-    def _split(self):
-        total_size = len(self.list_labels)
-        test_size = int(total_size * self.test_ratio)
-        val_size = int(total_size * self.val_ratio)
-        train_size = total_size - test_size - val_size
+    def _split(self) -> None:
+        self.list_labels = train_val_test_split(
+            self.list_labels,
+            val_size=self.val_ratio,
+            test_size=self.test_ratio,
+            dataset_type=self.dataset_type,
+        )
 
-        indices = np.random.permutation(total_size)
-
-        train_indices = indices[:train_size]
-        val_indices = indices[train_size : train_size + val_size]
-        test_indices = indices[train_size + val_size :]
-
-        if self.type == "train":
-            self.list_labels = [self.list_labels[i] for i in train_indices]
-        elif self.type == "val":
-            self.list_labels = [self.list_labels[i] for i in val_indices]
-        elif self.type == "test":
-            self.list_labels = [self.list_labels[i] for i in test_indices]
-        else:
-            raise ValueError("Unknown dataset type. Use 'train', 'val', or 'test'.")
-
-        print(f"Loaded {len(self.list_labels)} {self.type} labels.")
-
-    def __getitem__(self, index) -> Dict[str, torch.Tensor]:
+    def __getitem__(self, index: int) -> dict[str, torch.Tensor]:  # noqa: D105
         json_path = self.list_labels[index]
 
         # Load pre and post images
-        pre_image = self.get_image(json_path, time="pre")
-        post_image = self.get_image(json_path, time="post")
+        pre_image = self._get_image(json_path, time="pre")
+        post_image = self._get_image(json_path, time="post")
 
         # Load masks
-        pre_mask = self.get_mask(json_path, time="pre", mode=self.mode)
-        post_mask = self.get_mask(json_path, time="post", mode=self.mode)
+        pre_mask = self._get_mask(json_path, time="pre", mode=self.mode)
+        post_mask = self._get_mask(json_path, time="post", mode=self.mode)
 
         # Apply transformations if defined
         if self.transform:
@@ -447,27 +481,31 @@ class xDB_Siamese_Dataset(Change_Detection_Dataset):
             "post_mask": post_mask,
         }
 
-    def __len__(self) -> int:
+    def __len__(self) -> int:  # noqa: D105
         return len(self.list_labels)
 
-    def get_image(self, json_path, time="pre") -> Image:
+    def _get_image(self, json_path: str, time: Literal["pre", "post"] = "pre") -> Image:
         if time == "pre":
             json_path = json_path.replace("post", "pre")
 
         img_path = json_path.replace("labels", "images").replace(".json", ".png")
         return Image.open(img_path)
 
-    def get_damage_type(self, properties) -> str:
+    def _get_damage_type(self, properties: dict) -> str:
         if "subtype" in properties:
             return properties["subtype"]
-        else:
-            return "no-damage"
+        return "no-damage"
 
-    def get_mask(self, label_path, time="post", mode="building") -> np.ndarray:
+    def _get_mask(
+        self,
+        label_path: str,
+        time: Literal["pre", "post"] = "post",
+        mode: Literal["building", "full_damage", "simple_damage", "change_detection"] = "building",
+    ) -> np.ndarray:
         if time == "pre":
             label_path = label_path.replace("post", "pre")
 
-        with open(label_path) as json_file:
+        with Path.open(label_path) as json_file:
             image_json = json.load(json_file)
 
         metadata = image_json["metadata"]
@@ -476,7 +514,7 @@ class xDB_Siamese_Dataset(Change_Detection_Dataset):
         wkt_polygons = []
 
         for coord in coords:
-            damage = self.get_damage_type(coord["properties"])
+            damage = self._get_damage_type(coord["properties"])
             wkt_polygons.append((damage, coord["wkt"]))
 
         polygons = []
@@ -486,7 +524,7 @@ class xDB_Siamese_Dataset(Change_Detection_Dataset):
         mask = Image.new("L", (image_height, image_width), 0)
         draw = ImageDraw.Draw(mask)
 
-        damage_classes = self.get_classes(mode)
+        damage_classes = self._get_classes(mode)
 
         for damage, polygon in polygons:
             if polygon.is_valid:
@@ -498,84 +536,85 @@ class xDB_Siamese_Dataset(Change_Detection_Dataset):
 
         return np.array(mask)
 
-    def get_classes(self, mode):
+    def _get_classes(
+        self, mode: Literal["building", "full_damage", "simple_damage", "change_detection"]
+    ) -> dict:
         if mode == "full_damage":
+            # every damage classes are kept
             return {
                 "no-damage": 1,
                 "minor-damage": 2,
                 "major-damage": 3,
                 "destroyed": 4,
             }
-        elif mode == "simple_damage":
+        if mode == "simple_damage":
+            # gather classes into 2 damage level classification
             return {
                 "no-damage": 1,
                 "minor-damage": 1,
                 "major-damage": 2,
                 "destroyed": 2,
             }
-        elif mode == "change_detection":
+        if mode == "change_detection":
+            # only consider major damages as damages leading to changes for a binary classication task
             return {
                 "no-damage": 0,
                 "minor-damage": 0,
                 "major-damage": 1,
                 "destroyed": 1,
             }
-        elif mode == "building":
+        if mode == "building":
+            # gather every classes into a building class for a building footprint detections
             return {
                 "no-damage": 1,
                 "minor-damage": 1,
                 "major-damage": 1,
                 "destroyed": 1,
             }
-        else:
-            return None
+        return None
 
-    def display_data(self, list_ids: List[int], annotated=True, cols=2):
-        """
-        Display a list of images with or without annotations.
+    def display_data(
+        self,
+        list_ids: list[int],
+        display_mode: Literal["annotated", "plain"] = "annotated",
+        cols: int = 2,
+    ) -> None:
+        """Display a list of images with or without annotations.
 
-        Parameters:
-            list_ids (List[int]): List of indices of images to display.
-            annotated (bool): If True, overlay annotations on the images.
+        Args:
+            list_ids (list[int]): List of indices of images to display.
+            display_mode (Literal["annotated", "plain"]): "plain" for no annotations, "annotated" to overlay annotations.
             cols (int): Number of columns in the grid for displaying images.
+
         """
-
-        from matplotlib.patches import Patch
-
         if cols <= 0:
             raise ValueError("Number of columns (cols) must be a positive integer.")
 
-        # Number of images
         num_images = len(list_ids)
         if num_images == 0:
-            print("No images to display.")
+            logging.info("No images to display.")
             return
 
-        # Determine grid size
-        rows = num_images  # Ceiling division
-        # Set up the matplotlib figure
+        rows = num_images
         fig, axes = plt.subplots(rows, cols, figsize=(5 * cols, 5 * rows))
-        axes = axes.flatten() if rows > 1 or cols > 1 else [axes]  # Handle single image case
-        # Damage classes and their corresponding colors
+        axes = axes.flatten() if rows > 1 or cols > 1 else [axes]
 
         damage_colors = {
-            0: (0, 0, 0),  # Transparent background for class 0
-            1: (0, 1, 0),  # Green with some transparency for "no-damage"
-            2: (1, 1, 0),  # Yellow with some transparency for "minor-damage"
-            3: (1, 0.5, 0),  # Orange with some transparency for "major-damage"
-            4: (1, 0, 0),  # Red with some transparency for "destroyed"
+            0: (0, 0, 0),
+            1: (0, 1, 0),
+            2: (1, 1, 0),
+            3: (1, 0.5, 0),
+            4: (1, 0, 0),
         }
-
         cmap = plt.cm.colors.ListedColormap(
-            [damage_colors[val] for val in sorted(damage_colors.keys())]
+            [damage_colors[val] for val in sorted(damage_colors.keys())],
         )
 
         for i, idx in enumerate(list_ids):
-            if idx < 0 or idx >= len(self):  # Validate index
-                print(f"Index {idx} is out of bounds. Skipping...")
+            if idx < 0 or idx >= len(self):
+                logging.info("Index %d is out of bounds. Skipping...", idx)
                 continue
 
-            # Get the image data
             data = self.__getitem__(idx)
             pre_image, pre_mask = (
                 data["pre_image"].permute(1, 2, 0).numpy(),
@@ -588,68 +627,77 @@ class xDB_Siamese_Dataset(Change_Detection_Dataset):
 
             # Display pre-disaster image
             axes[2 * i].imshow(pre_image)
-            if annotated:
+            if display_mode == "annotated":
                 axes[2 * i].imshow(pre_mask, alpha=0.5, cmap=cmap)
             axes[2 * i].set_title(f"Image {idx}: Pre-disaster")
             axes[2 * i].axis("off")
 
             # Display post-disaster image
             axes[2 * i + 1].imshow(post_image)
-            if annotated:
+            if display_mode == "annotated":
                 axes[2 * i + 1].imshow(post_mask, alpha=0.5, cmap=cmap)
             axes[2 * i + 1].set_title(f"Image {idx}: Post-disaster")
             axes[2 * i + 1].axis("off")
 
-        # Hide unused axes
         for j in range(2 * num_images, len(axes)):
             axes[j].axis("off")
 
-        # Adjust layout and show the plot
         plt.tight_layout()
         plt.show()
 
 
-class xDB_Instance_Building(Instance_Segmentation_Dataset):
+class xDB_Instance_Building(InstanceSegmentationDataset):
+    """Dataset for instance segmentation tasks with building or damage masks.
+
+    This dataset supports both "instance" and "semantic" segmentation tasks for buildings or damage classes.
+    It loads images and their corresponding masks, performs train/val/test splits, and provides data in a format
+    suitable for PyTorch models.
+
+    Args:
+        origin_dir (str): Directory containing the dataset.
+        mode (str): "building" or "damage" to determine the type of masks to load.
+        time (str): Temporal filter for the dataset (e.g., "pre" or "post").
+        transform (callable | None): Optional transformation to apply on images and targets.
+        dataset_type (str): "train", "val", or "test" to determine the dataset split.
+        val_ratio (float): Fraction of the dataset to use for validation.
+        test_ratio (float): Fraction of the dataset to use for testing.
+        task (str): "instance" or "semantic" segmentation.
+        seed (int): Random seed for reproducibility.
+
+    Returns:
+        tuple[tv_tensors.Image, dict[str, torch.Tensor]]: Image and target dictionary for segmentation.
+
+    """
+
+    MEAN: ClassVar[list[float]] = [0.349, 0.354, 0.268]
+    STD: ClassVar[list[float]] = [0.114, 0.102, 0.094]
+
     def __init__(
         self,
         origin_dir: str,
-        mode: str = "building",
-        time: str = "pre",
-        transform: Optional[callable] = None,
-        type: str = "train",
+        mode: Literal["building", "damage"],
+        time: Literal["pre", "post"],
+        transform: callable | None = None,
+        dataset_type: Literal["train", "val", "test"] = "train",
         val_ratio: float = 0.1,
         test_ratio: float = 0.1,
-        task: str = "instance",
+        task: Literal["instance", "semantic"] = "instance",
         seed: int = 42,
-    ):
-        """
-        Dataset for instance segmentation tasks with building or damage masks.
+    ) -> None:
+        """Initialize the xDB_Instance_Building dataset for instance or semantic segmentation.
 
-        Parameters:
-        - origin_dir: Directory containing the dataset.
-        - mode: "building" or "damage" to determine the type of masks to load.
-        - time: Temporal filter for the dataset (e.g., "pre" or "post").
-        - transform: Optional transformation to apply on images and targets.
-        - type: "train", "val", or "test" to determine the dataset split.
-        - val_ratio: Fraction of the dataset to use for validation.
-        - test_ratio: Fraction of the dataset to use for testing.
-        - mode : "instance" or "semantic"
-        - seed: Random seed for reproducibility.
+        Args:
+            origin_dir (str): Directory containing the dataset.
+            mode (Literal["building", "damage"]): Type of masks to load.
+            time (Literal["pre", "post"]): Temporal filter for the dataset.
+            transform (callable | None): Optional transformation to apply on images and targets.
+            dataset_type (Literal["train", "val", "test"]): Dataset split type.
+            val_ratio (float): Fraction of the dataset to use for validation.
+            test_ratio (float): Fraction of the dataset to use for testing.
+            task (Literal["instance", "semantic"]): Segmentation task type.
+            seed (int): Random seed for reproducibility.
         """
-        MEAN = [0.349, 0.354, 0.268]
-        STD = [0.114, 0.102, 0.094]
-        assert type in [
-            "train",
-            "val",
-            "test",
-        ], "Dataset type must be 'train', 'val', or 'test'."
-        assert mode in ["building", "damage"], "Mode must be 'building' or 'damage'."
-        assert task in [
-            "instance",
-            "semantic",
-        ], "Task feature must be 'instance' or 'semantic'"
-
-        self.type = type
+        self.dataset_type = dataset_type
         self.mode = mode
         self.time = time
         self.transform = transform
@@ -659,58 +707,45 @@ class xDB_Instance_Building(Instance_Segmentation_Dataset):
         self.val_ratio = val_ratio
         self.test_ratio = test_ratio
 
-        np.random.seed(seed)  # Ensure reproducibility
+        np.random.default_rng(seed)  # Ensure reproducibility
         self._split()  # Perform train/val/test split
         self.task = task
 
-    def _split(self):
-        """Splits the dataset into train, validation, and test sets."""
-        total_size = len(self.list_labels)
-        test_size = int(total_size * self.test_ratio)
-        val_size = int(total_size * self.val_ratio)
-        train_size = total_size - test_size - val_size
+    def _split(self) -> None:
+        """Split the dataset into train, validation, and test sets."""
+        self.list_labels = train_val_test_split(
+            self.list_labels,
+            val_size=self.val_ratio,
+            test_size=self.test_ratio,
+            dataset_type=self.dataset_type,
+        )
 
-        indices = np.random.permutation(total_size)
-        train_indices = indices[:train_size]
-        val_indices = indices[train_size : train_size + val_size]
-        test_indices = indices[train_size + val_size :]
+    def __getitem__(self, index: int) -> tuple[tv_tensors.Image, dict[str, torch.Tensor]]:
+        """Retrieve an image and its corresponding mask for instance segmentation.
 
-        if self.type == "train":
-            self.list_labels = [self.list_labels[i] for i in train_indices]
-        elif self.type == "val":
-            self.list_labels = [self.list_labels[i] for i in val_indices]
-        elif self.type == "test":
-            self.list_labels = [self.list_labels[i] for i in test_indices]
-        else:
-            raise ValueError("Unknown dataset type. Use 'train', 'val', or 'test'.")
-
-        print(f"Loaded {len(self.list_labels)} {self.type} labels.")
-
-    def __getitem__(self, idx: int) -> Tuple[tv_tensors.Image, Dict[str, torch.Tensor]]:
-        """
-        Retrieves an image and its corresponding mask for instance segmentation.
-
-        Parameters:
-        - index: Index of the sample.
+        Args:
+            index (int): Index of the sample.
 
         Returns:
-        - img: Transformed image as a torch tensor.
-        - target: A dictionary with the following keys:
-            - "boxes": Bounding boxes for each instance.
-            - "masks": Instance masks.
-            - "labels": Labels for each instance (1 for all in this case).
-            - "image_id": Identifier for the image.
-            - "area": Areas of the bounding boxes.
+            out (tuple[Image, dict[str, torch.Tensor]]):
+                A tuple containing:
+                    - img (tv_tensors.Image): Transformed image as a torch tensor.
+                    - target (dict[str, torch.Tensor]): A dictionary with the following keys:
+                        - "boxes": Bounding boxes for each instance.
+                        - "masks": Instance masks.
+                        - "labels": Labels for each instance (1 for all in this case).
+                        - "image_id": Identifier for the image.
+                        - "area": Areas of the bounding boxes.
         """
         # Get the JSON path for the given index
-        json_path = self.list_labels[idx]
+        json_path = self.list_labels[index]
 
         # Load the image
-        image = self.get_image(json_path)
-        H, W = image.size[-2:]
+        image = self._get_image(json_path)
+        h, w = image.size[-2:]
 
         # Load the mask
-        binary_mask = self.get_mask(json_path, mode=self.mode)
+        binary_mask = self._get_mask(json_path, mode=self.mode)
 
         # From binary mask to instance mask
         num_objs, mask = cv2.connectedComponents(binary_mask)
@@ -738,7 +773,7 @@ class xDB_Instance_Building(Instance_Segmentation_Dataset):
         else:
             boxes = torch.zeros((0, 4), dtype=torch.float32)
             labels = torch.zeros((0,), dtype=torch.int64)
-            masks = torch.zeros((0, H, W), dtype=torch.uint8)
+            masks = torch.zeros((0, h, w), dtype=torch.uint8)
 
         # Wrap image into torchvision tv_tensors
         img = tv_tensors.Image(image)
@@ -746,19 +781,19 @@ class xDB_Instance_Building(Instance_Segmentation_Dataset):
         # Create the target dictionary
         if self.task == "instance":
             target = {
-                "boxes": tv_tensors.BoundingBoxes(boxes, format="XYXY", canvas_size=(H, W)),
+                "boxes": tv_tensors.BoundingBoxes(boxes, format="XYXY", canvas_size=(h, w)),
                 "masks": tv_tensors.Mask(masks),
                 "labels": labels,
-                "image_id": idx,
+                "image_id": index,
             }
         elif self.task == "semantic":
             target = {
-                "boxes": tv_tensors.BoundingBoxes(boxes, format="XYXY", canvas_size=(H, W)),
+                "boxes": tv_tensors.BoundingBoxes(boxes, format="XYXY", canvas_size=(h, w)),
                 "masks": tv_tensors.Mask(binary_mask),
                 "labels": labels,
-                "image_id": idx,
+                "image_id": index,
             }
-        target = self._filter_invalid_boxes(target, width=W, height=H)
+        target = self._filter_invalid_boxes(target, width=w, height=h)
 
         # Apply transformations if provided
         if self.transform is not None:
@@ -767,10 +802,10 @@ class xDB_Instance_Building(Instance_Segmentation_Dataset):
         return img, target
 
     def __len__(self) -> int:
-        """Returns the total number of samples in the dataset."""
+        """Return the total number of samples in the dataset."""
         return len(self.list_labels)
 
-    def _filter_invalid_boxes(self, target, width=512, height=512):
+    def _filter_invalid_boxes(self, target: dict, width: int = 512, height: int = 512) -> dict:
         if self.task == "instance":
             boxes = target["boxes"]
             masks = target["masks"]
@@ -792,32 +827,34 @@ class xDB_Instance_Building(Instance_Segmentation_Dataset):
             else:
                 target["boxes"] = torch.tensor(valid_boxes, dtype=torch.float32)
                 target["masks"] = torch.tensor(
-                    valid_masks, dtype=torch.float32
+                    valid_masks,
+                    dtype=torch.float32,
                 )  # Ensure masks have appropriate dtype
                 target["labels"] = torch.tensor(
-                    valid_labels, dtype=torch.long
+                    valid_labels,
+                    dtype=torch.long,
                 )  # Labels are typically integers
 
         return target
 
-    def get_image(self, json_path) -> Image:
-        """
-        Open image file based on the json_path label file.
+    def _get_image(self, json_path: str) -> Image:
+        """Open image file based on the json_path label file.
 
         Image path example: ../images/joplin-tornado_00000000_post_disaster.png
         Label path example: ../labels/joplin-tornado_00000000_post_disaster.json
 
-        Parameters:
-            json_path (str): Path to the label JSON file.
-            time (str): "pre" for pre-disaster image, "post" for post-disaster image.
+        Args:
+        json_path : str
+            Path to the label JSON file.
 
         Returns:
             PIL.Image.Image: The corresponding image.
 
         Raises:
+        ------
             FileNotFoundError: If the image file is not found.
-        """
 
+        """
         # Adjust path for "pre" time if needed
         if self.time == "pre":
             json_path = json_path.replace("post", "pre")
@@ -827,26 +864,24 @@ class xDB_Instance_Building(Instance_Segmentation_Dataset):
         # Open and return the image
         return Image.open(img_path)
 
-    def get_damage_type(self, properties) -> str:
+    def _get_damage_type(self, properties: dict) -> str:
         if "subtype" in properties:
             return properties["subtype"]
-        else:
-            return "no-damage"
+        return "no-damage"
 
-    def get_mask(self, label_path, mode="building") -> np.ndarray:
-        """
-        Build a mask from a label file.
+    def _get_mask(self, label_path: str, mode: str = "building") -> np.ndarray:
+        """Build a mask from a label file.
 
-        Parameters:
+        Args:
             label_path (str): Path to the JSON label file.
-            image_size (tuple): Size of the output mask (height, width).
             mode (str): "building" for binary mask, "damage" for multiclass mask.
 
         Returns:
             np.ndarray: Mask as a numpy array.
+
         """
         # Load JSON file
-        with open(label_path) as json_file:
+        with Path.open(label_path) as json_file:
             image_json = json.load(json_file)
 
         # Extract building polygons and their damage types
@@ -856,7 +891,7 @@ class xDB_Instance_Building(Instance_Segmentation_Dataset):
         wkt_polygons = []
 
         for coord in coords:
-            damage = self.get_damage_type(coord["properties"])  # Get damage type
+            damage = self._get_damage_type(coord["properties"])  # Get damage dataset_type
             wkt_polygons.append((damage, coord["wkt"]))
 
         # Convert WKT to Shapely polygons
@@ -866,7 +901,9 @@ class xDB_Instance_Building(Instance_Segmentation_Dataset):
 
         # Initialize the mask
         mask = Image.new(
-            "L", (image_height, image_width), 0
+            "L",
+            (image_height, image_width),
+            0,
         )  # 'L' mode for grayscale, initialized to 0
         draw = ImageDraw.Draw(mask)
 
@@ -891,12 +928,15 @@ class xDB_Instance_Building(Instance_Segmentation_Dataset):
         # Convert mask to numpy array
         return np.array(mask)
 
-    def display_sample(self, idx: int):
-        """
-        Displays an image with its segmentation masks, bounding boxes, and labels.
+    def display_sample(self, idx: int, threshold: float = 0.5) -> None:
+        """Display an image with its segmentation masks, bounding boxes, and labels.
 
-        Parameters:
-            idx (int): Index of the sample to display.
+        Args:
+        idx : int
+            Index of the sample to display.
+        threshold : float, optional
+            Threshold value to binarize the masks for display (default is 0.5).
+
         """
         img, target = self.__getitem__(idx)
 
@@ -918,14 +958,14 @@ class xDB_Instance_Building(Instance_Segmentation_Dataset):
         # Define colors for each label (assign one color per unique class)
         unique_labels = list(set(labels))
         int_colors = [(i * 30 % 256, i * 60 % 256, i * 90 % 256) for i in unique_labels]
-        label_to_color = {label: color for label, color in zip(unique_labels, int_colors)}
+        label_to_color = dict(zip(unique_labels, int_colors))
 
         colors = [label_to_color[label] for label in labels]
 
         # Annotate the image with segmentation masks
         annotated_tensor = draw_segmentation_masks(
             image=tensor_image,
-            masks=masks > 0.5,  # Ensure masks are binary
+            masks=(masks > threshold),  # Ensure masks are binary
             alpha=0.3,
             colors=colors,
         )
@@ -946,13 +986,13 @@ class xDB_Instance_Building(Instance_Segmentation_Dataset):
         plt.figure(figsize=(10, 10))
         plt.imshow(annotated_image)
         plt.axis("off")
-        plt.title(f"Sample {idx} - {len(labels)} Objects")
+        plt.title(f"Sample {idx}    {len(labels)} Objects")
         plt.show()
 
     """def display_sample(self, idx: int, show_labels: bool = True):
         Displays an image with its bounding boxes, masks, and optionally labels.
 
-        Parameters:
+        Args::
             idx (int): Index of the sample to display.
             show_labels (bool): Whether to display labels with bounding boxes.
         img, target = self.__getitem__(idx)
@@ -980,14 +1020,14 @@ class xDB_Instance_Building(Instance_Segmentation_Dataset):
         # Overlay bounding boxes and labels
         for box, label in zip(boxes, labels):
             x_min, y_min, x_max, y_max = box
-            width = x_max - x_min
-            height = y_max - y_min
+            width = x_max    x_min
+            height = y_max    y_min
             rect = Rectangle((x_min, y_min), width, height, edgecolor='lime', facecolor='none', linewidth=1)
             ax.add_patch(rect)
 
             if show_labels:
                 ax.text(
-                    x_min, y_min - 5,  # Position text slightly above the box
+                    x_min, y_min    5,  # Position text slightly above the box
                     str(label),  # Convert label to string for display
                     fontsize=5,
                     color='white',
@@ -995,5 +1035,5 @@ class xDB_Instance_Building(Instance_Segmentation_Dataset):
                 )
 
         # Title and display
-        ax.set_title(f"Sample {idx} - {len(boxes)} Objects")
+        ax.set_title(f"Sample {idx}    {len(boxes)} Objects")
         plt.show()"""

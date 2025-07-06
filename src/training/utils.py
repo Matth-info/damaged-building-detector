@@ -1,44 +1,35 @@
 # Core Python imports
+from __future__ import annotations
+
 import logging
-import os
-import random
-from collections import Counter
-from concurrent.futures import ThreadPoolExecutor
+from pathlib import Path
+from typing import TYPE_CHECKING
 
 # Third-party libraries
-import numpy as np
-
 # PyTorch imports
 import torch
 import torch.distributed as dist
-import torch.nn as nn
 
 # PyTorch Vision imports
-import torchvision
 from prettytable import PrettyTable
-from torch.utils.data import DataLoader, Dataset
-from torch.utils.data.sampler import WeightedRandomSampler
-from torchvision.utils import save_image
-from tqdm import tqdm
+from torch import nn
 
-from src.utils.visualization import apply_color_map
-
-__all__ = [
-    "define_weighted_random_sampler",
-    "define_class_weights",
-    "save_checkpoint",
-    "load_checkpoint",
-    "initialize_optimizer_scheduler",
-]
+if TYPE_CHECKING:
+    import numpy as np
+    from torch.optim import Optimizer, lr_scheduler
 
 
 def initialize_optimizer_scheduler(
-    model, optimizer=None, scheduler=None, optimizer_params=None, scheduler_params=None
-):
-    """
-    Initializes the optimizer and learning rate scheduler.
+    model: nn.Module,
+    optimizer: Optimizer | None,
+    scheduler: lr_scheduler.LRScheduler | None,
+    optimizer_params: dict | None,
+    scheduler_params: dict | None,
+) -> tuple[Optimizer, lr_scheduler.LRScheduler]:
+    """Initialize the optimizer and learning rate scheduler.
 
     Args:
+    ----
         model (torch.nn.Module): The model whose parameters require optimization.
         optimizer (type or torch.optim.Optimizer, optional): Optimizer class (e.g., torch.optim.AdamW) or an initialized optimizer.
             Defaults to None, which uses AdamW with a default learning rate.
@@ -50,7 +41,9 @@ def initialize_optimizer_scheduler(
             Defaults to None.
 
     Returns:
+    -------
         tuple: A tuple containing the initialized optimizer and scheduler.
+
     """
     # Default optimizer parameters
     optimizer_params = optimizer_params or {"lr": 1e-4}
@@ -81,219 +74,149 @@ def initialize_optimizer_scheduler(
     return optimizer_ft, lr_scheduler
 
 
-def save_checkpoint(epoch, model, optimizer, scheduler, model_dir):
-    """
-    Save a checkpoint for the model, optimizer, and scheduler.
+def save_checkpoint(
+    epoch: int,
+    model: nn.Module,
+    optimizer: Optimizer | None,
+    scheduler: lr_scheduler.LRScheduler | None,
+    model_dir: str,
+    experiment_name: str,
+) -> None:
+    """Save a checkpoint for the model, optimizer, and scheduler.
 
     Args:
+    ----
         epoch (int): Current epoch number.
         model (torch.nn.Module): The model being trained.
         optimizer (torch.optim.Optimizer): The optimizer used for training.
         scheduler (torch.optim.lr_scheduler._LRScheduler): The learning rate scheduler.
         model_dir (str): Directory to save the checkpoint.
-    """
+        experiment_name (str): Experiment name
 
+    """
+    checkpoint_dir = Path(model_dir) / experiment_name
     # Ensure checkpoint directory exists
-    os.makedirs(model_dir, exist_ok=True)
+    Path.mkdir(checkpoint_dir, exist_ok=True)
     # Save periodic checkpoints
-    checkpoint_path = os.path.join(model_dir, f"checkpoint_epoch_{epoch}.pth")
+    checkpoint_path = Path(checkpoint_dir) / f"checkpoint_epoch_{epoch}.pth"
     checkpoint_data = {
         "epoch": epoch,
         "model_state": model.state_dict(),
-        "optimizer_state": optimizer.state_dict(),
-        "scheduler_state": scheduler.state_dict(),
+        "optimizer_state": optimizer.state_dict() if optimizer else None,
+        "scheduler_state": scheduler.state_dict() if scheduler else None,
     }
     torch.save(checkpoint_data, checkpoint_path)
-    logging.info(f"Checkpoint saved at {checkpoint_path}")
+    logging.info("Checkpoint saved at %s", checkpoint_path)
 
 
-def load_checkpoint(checkpoint_path, model, optimizer=None, scheduler=None):
-    """
-    Load a checkpoint for the model, optimizer, and scheduler.
+def load_checkpoint(
+    checkpoint_path: str,
+    model: nn.Module,
+    optimizer: Optimizer | None,
+    scheduler: lr_scheduler.LRScheduler | None,
+) -> int:
+    """Load a checkpoint for the model, optimizer, and scheduler.
 
     Args:
+    ----
         checkpoint_path (str): Path to the checkpoint file.
         model (torch.nn.Module): The model to restore the state to.
         optimizer (torch.optim.Optimizer, optional): The optimizer to restore the state to.
         scheduler (torch.optim.lr_scheduler._LRScheduler, optional): The scheduler to restore the state to.
 
     Returns:
+    -------
         int: The epoch to resume training from.
+
     """
-    if not os.path.exists(checkpoint_path):
-        raise FileNotFoundError(f"Checkpoint file not found: {checkpoint_path}")
+    if not Path.exists(checkpoint_path):
+        raise FileNotFoundError("Checkpoint file not found: %s", checkpoint_path)
 
     checkpoint = torch.load(checkpoint_path)
     model.load_state_dict(checkpoint["model_state"])
-    print(f"Model state loaded from {checkpoint_path}")
+    logging.info("Model state loaded from %d", checkpoint_path)
 
     if optimizer is not None:
         optimizer.load_state_dict(checkpoint["optimizer_state"])
-        print("Optimizer state loaded.")
+        logging.info("Optimizer state loaded.")
 
     if scheduler is not None:
         scheduler.load_state_dict(checkpoint["scheduler_state"])
-        print("Scheduler state loaded.")
+        logging.info("Scheduler state loaded.")
 
     return checkpoint["epoch"]
 
 
-def save_model(model, ckpt_path="./models", name="model"):
-    path = os.path.join(ckpt_path, f"{name}.pth")
-    torch.save(model.state_dict(), path, _use_new_zipfile_serialization=False)
-
-
-def load_model(model, ckpt_path):
-    state = torch.load(ckpt_path)
-    model.load_state_dict(state)
-    return model
-
-
-def display_metrics(metrics, phase):
-    """
-    Display metrics in a tabular format.
+def display_metrics(metrics: dict, phase: str) -> None:
+    """Display metrics in a tabular format.
 
     Args:
+    ----
         phase (str): The phase of training (e.g., 'training', 'validation').
         metrics (dict): Dictionary containing metric names and their values.
+
+    Returns:
+        None: This function prints the formatted confusion matrix to the console.
+
     """
-    print(f"\nMetrics ({phase.capitalize()} Phase): \n")
+    logging.info("\nMetrics (%s Phase): \n", phase.capitalize())
     table = PrettyTable()
     table.field_names = ["Metric", "Value"]
 
     for metric, value in metrics.items():
         # Convert the value to a float if it's a numpy float
-        if hasattr(value, "item"):
-            value = value.item()
-        table.add_row([metric, f"{value:.4f}"])
+        table.add_row([metric, f"{value.item() if hasattr(value, 'item') else value:.4f}"])
 
-    print(table)
+    logging.info(table)
 
 
-# Utils for dealing with class imbalanced datasets
-def define_weighted_random_sampler(dataset, mask_key="post_mask", subset_size=None, seed: int = None, num_workers : int = 16):
-    """
-    Define a WeightedRandomSampler for a segmentation dataset to address class imbalance.
+def display_confusion_matrix(cm: np.ndarray, class_names: list[str], decimals: int) -> None:
+    """Display a confusion matrix in a formatted table using PrettyTable.
 
     Args:
-        dataset: Dataset where each sample includes a mask under mask_key.
-        mask_key: Key to access the mask in the dataset sample.
-        subset_size: Optional number of samples to estimate class weights.
-        seed: Optional random seed.
+        cm (np.ndarray): The confusion matrix to display, typically a 2D array of shape (n_classes, n_classes).
+        class_names (list[str]): List of class names corresponding to the rows and columns of the confusion matrix.
+        decimals (int): Number of decimal places to round the matrix values for display.
 
     Returns:
-        sampler: A WeightedRandomSampler for balanced class sampling.
-        class_weights: Dict of class weights.
+        None: This function prints the formatted confusion matrix to the console.
+
     """
-    if seed is not None:
-        random.seed(seed)
-        np.random.seed(seed)
+    table = PrettyTable()
+    table.field_names = [r"True \ Pred", *class_names]
 
-    # Sample a subset of indices if required
-    if subset_size is not None:
-        sampled_indices = random.sample(range(len(dataset)), min(subset_size, len(dataset)))
-    else:
-        sampled_indices = range(len(dataset))
-
-    # Count class frequencies across selected samples
-    class_counts = Counter()
-    for i in tqdm(sampled_indices, desc="Counting class frequencies"):
-        mask = dataset[i][mask_key]
-        mask_flat = mask.flatten().numpy()
-        class_counts.update(mask_flat)
-
-    # Calculate inverse frequency weights
-    total_pixels = sum(class_counts.values())
-    class_weights = {
-        cls: np.round(total_pixels / (count + 1e-6), 3) for cls, count in class_counts.items()
-    }
-
-    # Precompute weights with multiprocessing
-    def compute_sample_weight(i):
-        mask = dataset[i][mask_key]
-        mask_flat = mask.flatten().numpy()
-        unique, counts = np.unique(mask_flat, return_counts=True)
-        pixel_weights = np.array([class_weights[cls] for cls in unique])
-        return np.dot(counts, pixel_weights) / counts.sum()
-
-    # Use ThreadPoolExecutor to parallelize sample weight computation
-    with ThreadPoolExecutor(max_workers=num_workers if num_workers else os.cpu_count()) as executor:
-        sample_weights = list(tqdm(
-            executor.map(compute_sample_weight, range(len(dataset))),
-            total=len(dataset),
-            desc="Assigning sample weights"
-        ))
-
-    sampler = WeightedRandomSampler(weights=sample_weights, num_samples=len(dataset), replacement=True)
-    return sampler, class_weights
-
-
-def define_class_weights(dataset, mask_key="post_mask", subset_size=None, seed: int = None):
-    """
-    Define classweights for a segmentation dataset to address class imbalance.
-
-    Args:
-        dataset: A segmentation dataset where each sample includes an image and its corresponding mask.
-        mask_key: Key to access the mask in the dataset sample (default: "post_mask").
-        subset_size: Number of random samples to use for estimating class weights. If None, uses the full dataset.
-        seed : seed number
-    Returns:
-        sampler: A WeightedRandomSampler for balanced class sampling.
-        class_weights: Inversely proportional class weights for imbalance dataset.
-    """
-    if seed is not None:
-        random.seed(seed)
-    # Determine subset of dataset to analyze (optional)
-    if subset_size is not None:
-        sampled_indices = random.sample(range(len(dataset)), min(len(dataset), subset_size))
-    else:
-        sampled_indices = range(len(dataset))
-
-    # Initialize a counter for pixel-level class frequencies
-    class_counts = Counter()
-
-    # Loop through the sampled subset of the dataset to count class frequencies in masks
-    for i in tqdm(sampled_indices, desc="Counting class frequencies"):
-        mask = dataset[i][mask_key]
-        mask_flat = mask.flatten().numpy()  # Flatten the mask to count pixel-level classes
-        class_counts.update(mask_flat)
-
-    # Convert class counts to weights (inverse frequency)
-    total_pixels = sum(class_counts.values())
-    class_weights = {cls: total_pixels / (count + 1e-6) for cls, count in class_counts.items()}
-    return class_weights
+    for i, row in enumerate(cm):
+        formatted_row = [round(x, decimals) for x in row]
+        table.add_row([class_names[i], *formatted_row])
+    logging.info(table)
 
 
 # Utils Functions for Fine Tuning Mask-R-CNN #
 
-__all__ = ["reduce_dict"]
 
-
-def is_dist_avail_and_initialized():
+def _is_dist_avail_and_initialized() -> bool:
     if not dist.is_available():
         return False
-    if not dist.is_initialized():
-        return False
-    return True
+    return dist.is_initialized()
 
 
-def get_world_size():
-    if not is_dist_avail_and_initialized():
+def _get_world_size() -> int:
+    if not _is_dist_avail_and_initialized():
         return 1
     return dist.get_world_size()
 
 
-def reduce_dict(input_dict, average=True):
-    """
+def _reduce_dict(input_dict: dict, *, average: bool = True) -> dict:
+    """Reduce the values in the dictionary from all processes so that all processes have the averaged results. Returns a dict with the same fields as input_dict, after reduction.
+
     Args:
+    ----
         input_dict (dict): all the values will be reduced
         average (bool): whether to do average or sum
-    Reduce the values in the dictionary from all processes so that all processes
-    have the averaged results. Returns a dict with the same fields as
-    input_dict, after reduction.
+
     """
-    world_size = get_world_size()
-    if world_size < 2:
+    world_size = _get_world_size()
+    if world_size < 2:  # noqa: PLR2004
         return input_dict
     with torch.inference_mode():
         names = []
@@ -306,5 +229,4 @@ def reduce_dict(input_dict, average=True):
         dist.all_reduce(values)
         if average:
             values /= world_size
-        reduced_dict = {k: v for k, v in zip(names, values)}
-    return reduced_dict
+        return dict(zip(names, values))

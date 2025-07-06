@@ -1,10 +1,14 @@
 # Visualization utils functions
+from __future__ import annotations
+
+import logging
 import os
-from typing import Dict, List, Tuple
+from pathlib import Path
 
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
+from torch import Tensor
 from torchvision.utils import draw_bounding_boxes, draw_segmentation_masks
 
 from src.data import renormalize_image
@@ -42,29 +46,37 @@ COLOR_DICT = {
     "damage": DAMAGE_MAPPING,
 }
 
+RGB_CHANNEL_SIZE = 3
+RGBA_CHANNEL_SIZE = 4
+
 
 # Function to apply colors to masks (labels and predictions)
 def apply_color_map(
     mask: torch.Tensor | np.ndarray,
-    color_dict: Dict[int, Tuple] = DEFAULT_MAPPING,
+    color_dict: dict[int, tuple] = DEFAULT_MAPPING,
+    *,
     with_transparency: bool = False,
-):
-    """
-    Applies a color map (color_dict) to a mask tensor.
+) -> Tensor:
+    """Applies a color map (color_dict) to a mask tensor.
 
     Args:
+    ----
         mask (tensor): Mask tensor (predictions or labels). shape (N, H, W)
         color_dict (dict): A dictionary mapping class labels to RGB colors.
         with_transparency (bool) : Add a transparency channel (4th one) or not
 
     Returns:
+    -------
         color_mask (tensor): The colored mask tensor.
+
     """
     batch_size, height, width = mask.shape
     nb_channels = 3
     if with_transparency:
-        nb_channels = 4
-        color_mask = torch.zeros((batch_size, 4, height, width), dtype=torch.float32)
+        nb_channels = RGBA_CHANNEL_SIZE
+        color_mask = torch.zeros(
+            (batch_size, RGBA_CHANNEL_SIZE, height, width), dtype=torch.float32
+        )
     else:
         color_mask = torch.zeros((batch_size, 3, height, width), dtype=torch.float32)
 
@@ -72,7 +84,6 @@ def apply_color_map(
 
     for label, color in color_dict.items():
         binary_mask = (mask == label).float()
-        color = color_dict[label]
         # Apply the color to the binary mask
         for c in range(nb_channels):
             color_mask[:, c, :, :] += binary_mask * (color[c] / 255.0)
@@ -82,24 +93,26 @@ def apply_color_map(
 
 def apply_inverse_color_map(
     color_mask: np.ndarray,
-    color_dict: Dict[int, Tuple] = DEFAULT_MAPPING,
+    color_dict: dict[int, tuple] = DEFAULT_MAPPING,
 ) -> np.ndarray:
-    """
-    Converts a colorized mask (RGB or RGBA) back into a label mask.
+    """Converts a colorized mask (RGB or RGBA) back into a label mask.
 
     Args:
+    ----
         color_mask (np.ndarray): The colorized mask, shape (H, W, C) where C is 3 (RGB) or 4 (RGBA).
         color_dict (dict): A dictionary mapping class labels to RGB(A) colors.
 
     Returns:
+    -------
         np.ndarray: The label mask, shape (H, W), where each pixel contains the class label.
+
     """
     # Ensure the input is a NumPy array
     if isinstance(color_mask, torch.Tensor):
         color_mask = color_mask.cpu().numpy()
 
     # Remove the alpha channel if present
-    if color_mask.shape[-1] == 4:  # RGBA
+    if color_mask.shape[-1] == RGBA_CHANNEL_SIZE:  # RGBA
         color_mask = color_mask[..., :3]  # Keep only RGB
 
     # Initialize the label mask
@@ -118,13 +131,10 @@ def apply_inverse_color_map(
     return label_mask
 
 
-def add_image_transparency(mask: np.ndarray):
-    """
-    Add a Transparency Layer to Images, making white pixels transparent
-    From RGB to RGBA
-    """
+def add_image_transparency(mask: np.ndarray) -> np.ndarray:
+    """Add a Transparency Layer to Images, making white pixels transparent from RGB to RGBA."""
     # Initialize with zeros, then copy RGB from mask and set alpha appropriately
-    new_mask = np.zeros((mask.shape[0], mask.shape[1], 4), dtype=np.uint8)
+    new_mask = np.zeros((mask.shape[0], mask.shape[1], RGBA_CHANNEL_SIZE), dtype=np.uint8)
     # Copy RGB channels
     new_mask[..., :3] = mask
     # Create transparency mask
@@ -134,12 +144,10 @@ def add_image_transparency(mask: np.ndarray):
     return new_mask
 
 
-def make_background_transparent(mask: np.ndarray):
-    """
-    Create a Matplotlib Alpha to make white-pixels transparent
-    """
+def make_background_transparent(mask: np.ndarray) -> np.ndarray:
+    """Create a Matplotlib Alpha to make background white-pixels transparent."""
     # Create a transparent alpha channel (initially all 255, meaning fully opaque)
-    alpha_mask = np.ones((mask.shape[0], mask.shape[1], 4), dtype=np.uint8)
+    alpha_mask = np.ones((mask.shape[0], mask.shape[1], RGBA_CHANNEL_SIZE), dtype=np.uint8)
 
     # Identify where the pixels are white (i.e., [255, 255, 255])
     white_pixels = np.all(mask == [255, 255, 255], axis=-1)
@@ -154,20 +162,23 @@ def make_background_transparent(mask: np.ndarray):
 
 
 def display_semantic_predictions_batch(
-    images, mask_predictions, mask_labels, normalized=None, folder_path=None
-):
-    """
-    Displays a batch of images alongside their predicted masks and ground truth masks,
-    and optionally saves the images in a folder.
+    images: Tensor | np.ndarray,
+    mask_predictions: Tensor | np.ndarray,
+    mask_labels: Tensor | np.ndarray,
+    normalized: dict | None = None,
+    folder_path: str | None = None,
+) -> None:
+    """Display a batch of images alongside their predicted masks and ground truth masks and optionally saves the images in a folder.
 
     Args:
+    ----
         images (torch.Tensor or numpy.ndarray): Batch of input images, shape (N, C, H, W) or (N, H, W, C).
         mask_predictions (torch.Tensor or numpy.ndarray): Batch of predicted masks, shape (N, H, W) or (N, H, W, C).
         mask_labels (torch.Tensor or numpy.ndarray): Batch of ground truth masks, shape (N, H, W) or (N, H, W, C).
         normalized (dict): Dictionary containing "mean" and "std" for unnormalization.
         folder_path (str): Path to the folder where images will be saved. If None, images are not saved.
-    """
 
+    """
     if normalized is None:
         bool_normalized = False
     else:
@@ -187,7 +198,7 @@ def display_semantic_predictions_batch(
 
     # Create the folder if folder_path is provided
     if folder_path is not None:
-        os.makedirs(folder_path, exist_ok=True)
+        Path.mkdir(folder_path, exist_ok=True)
 
     for i in range(batch_size):
         image = images[i]
@@ -195,12 +206,12 @@ def display_semantic_predictions_batch(
         mask_label = mask_labels[i]
 
         # Handle channel-first images (C, H, W) and unnormalize
-        if image.ndim == 3 and image.shape[0] == 3:  # RGB images
+        if image.ndim == RGB_CHANNEL_SIZE and image.shape[0] == RGB_CHANNEL_SIZE:  # RGB images
             image = np.transpose(image, (1, 2, 0))  # Convert to (H, W, C)
             image = (
                 renormalize_image(image, std, mean) if bool_normalized else image
             )  # Unnormalize and clip to [0, 1]
-        elif image.ndim == 3 and image.shape[0] == 1:  # Grayscale
+        elif image.ndim == RGB_CHANNEL_SIZE and image.shape[0] == 1:  # Grayscale
             image = image[0]  # Remove channel dimension
 
         # Create the plot
@@ -230,32 +241,35 @@ def display_semantic_predictions_batch(
 
         # Save the plot if folder_path is provided
         if folder_path is not None:
-            file_path = os.path.join(folder_path, f"sample_{i + 1}.png")
+            file_path = Path(folder_path) / f"sample_{i + 1}.png"
             plt.savefig(file_path)
-            print(f"Saved: {file_path}")
+            logging.info("Saved: %s", file_path)
 
         plt.show()
 
 
 def display_instance_predictions_batch(
-    images,
-    mask_predictions,
-    score_threshold=0.6,
-    max_images=5,
-    display: List[str] = None,
-):
-    """
-    Visualizes predictions from the model on a given dataset.
+    images: Tensor,
+    mask_predictions: list[dict],
+    score_threshold: float = 0.6,
+    max_images: int = 5,
+    display: list[str] | None = None,
+) -> None:
+    """Display a batch of images with their instance segmentation predictions, including bounding boxes and/or masks.
 
-    Parameters:
-    - model: The model to use for inference.
-    - batch: batch data = (images, targets).
-    - device: The device to run the inference on ('cuda' or 'cpu').
-    - score_threshold: The threshold above which predictions are considered valid.
-    - max_images: The number of images to display.
+    Args:
+    ----
+        images (Tensor): Batch of input images, shape (N, C, H, W).
+        mask_predictions (list[dict]): List of prediction dicts with keys "boxes", "labels", "scores", "masks".
+        score_threshold (float): Minimum score for a prediction to be displayed.
+        max_images (int): Maximum number of images to display.
+        display (list[str] | None): List containing "boxes" and/or "masks" to specify what to display.
     """
-    assert display is not None, "Display 'boxes' and/or 'masks"
-    # Set model to evaluation mode
+    if display is None:
+        logging.info(
+            "Default Display mode is set : visualizing bounding boxes and semantic masks."
+        )
+        display = ["boxes", "masks"]
 
     # Loop through the data loader (for visualization, we can stop after a few images)
 
@@ -270,7 +284,7 @@ def display_instance_predictions_batch(
 
         # Normalize and convert to uint8
         output_image = (255.0 * (image - image.min()) / (image.max() - image.min())).to(
-            torch.uint8
+            torch.uint8,
         )
 
         # Filter out low-confidence predictions
@@ -282,16 +296,21 @@ def display_instance_predictions_batch(
         # Draw bounding boxes
         if "boxes" in display:
             output_image = draw_bounding_boxes(
-                output_image, pred_boxes.long(), labels=pred_labels, colors="red"
+                output_image,
+                pred_boxes.long(),
+                labels=pred_labels,
+                colors="red",
             )
 
         # Draw segmentation masks
-        if "masks" in display:
-            if pred_masks.numel() > 0:  # Ensure there are masks to draw
-                masks = (pred_masks > 0.5).squeeze(1)  # Binarize the masks
-                output_image = draw_segmentation_masks(
-                    output_image, masks, alpha=0.5, colors="blue"
-                )
+        if "masks" in display and pred_masks.numel() > 0:  # Ensure there are masks to draw
+            masks = (pred_masks > 0.5).squeeze(1)  # Binarize the masks  # noqa: PLR2004
+            output_image = draw_segmentation_masks(
+                output_image,
+                masks,
+                alpha=0.5,
+                colors="blue",
+            )
 
         # Move the output image to the CPU and convert to NumPy array for plotting
         output_image = output_image.cpu()
@@ -303,32 +322,36 @@ def display_instance_predictions_batch(
         plt.show()
 
 
-def display_semantic_siamese_predictions_batch(
-    pre_images,
-    post_images,
-    mask_predictions,
-    mask_labels,
-    normalized=None,
-    folder_path=None,
-):
-    """
-    Displays a batch of pre-event and post-event images alongside their predicted masks
-    and ground truth masks, and optionally saves the images in a folder.
+def display_semantic_is_siamese_predictions_batch(
+    pre_images: Tensor | np.ndarray,
+    post_images: Tensor | np.ndarray,
+    mask_predictions: Tensor | np.ndarray,
+    mask_labels: Tensor | np.ndarray,
+    normalized: dict | None = None,
+    folder_path: str | None = None,
+) -> None:
+    """Displays a batch of pre-event and post-event images alongside their predicted masks and ground truth masks, and optionally saves the images in a folder.
 
     Args:
+    ----
         pre_images (torch.Tensor or numpy.ndarray): Batch of pre-event images, shape (N, C, H, W) or (N, H, W, C).
         post_images (torch.Tensor or numpy.ndarray): Batch of post-event images, shape (N, C, H, W) or (N, H, W, C).
         mask_predictions (torch.Tensor or numpy.ndarray): Batch of predicted masks, shape (N, H, W) or (N, H, W, C).
         mask_labels (torch.Tensor or numpy.ndarray): Batch of ground truth masks, shape (N, H, W) or (N, H, W, C).
         normalized (dict): Dictionary containing "mean" and "std" for unnormalization.
         folder_path (str): Path to the folder where images will be saved. If None, images are not saved.
-    """
 
+    """
     # Determine normalization parameters
     bool_normalized = normalized is not None
-    mean, std = normalized.get("mean"), normalized.get("std") if bool_normalized else (
-        0,
-        1,
+    mean, std = (
+        normalized.get("mean"),
+        normalized.get("std")
+        if bool_normalized
+        else (
+            0,
+            1,
+        ),
     )
 
     # Convert tensors to numpy arrays if needed
@@ -344,7 +367,7 @@ def display_semantic_siamese_predictions_batch(
 
     # Create the output folder if folder_path is provided
     if folder_path is not None:
-        os.makedirs(folder_path, exist_ok=True)
+        Path.mkdir(folder_path, exist_ok=True)
 
     for i in range(batch_size):
         pre_image = pre_images[i]
@@ -353,11 +376,11 @@ def display_semantic_siamese_predictions_batch(
         mask_label = mask_labels[i]
 
         # Handle channel-first images (C, H, W) and unnormalize if needed
-        def process_image(image):
-            if image.ndim == 3 and image.shape[0] == 3:  # RGB
+        def process_image(image: Tensor | np.ndarray) -> Tensor | np.ndarray:
+            if image.ndim == RGB_CHANNEL_SIZE and image.shape[0] == RGB_CHANNEL_SIZE:  # RGB
                 image = np.transpose(image, (1, 2, 0))  # Convert to (H, W, C)
                 return renormalize_image(image, mean, std) if bool_normalized else image
-            elif image.ndim == 3 and image.shape[0] == 1:  # Grayscale
+            if image.ndim == RGB_CHANNEL_SIZE and image.shape[0] == 1:  # Grayscale
                 return image[0]  # Remove channel dimension
             return image
 
@@ -395,8 +418,8 @@ def display_semantic_siamese_predictions_batch(
 
         # Save the plot if folder_path is provided
         if folder_path is not None:
-            file_path = os.path.join(folder_path, f"sample_{i + 1}.png")
+            file_path = Path(folder_path) / f"sample_{i + 1}.png"
             plt.savefig(file_path)
-            print(f"Saved: {file_path}")
+            logging.info("Saved: %s", file_path)
 
         plt.show()

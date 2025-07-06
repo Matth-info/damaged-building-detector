@@ -1,40 +1,47 @@
 # Post-Training Pruning
 # Unstructured Pruning
+from __future__ import annotations
+
 import logging
 
 import pandas as pd
 import torch
-import torch.nn as nn
-import torch.nn.utils.prune as prune
-from torch.utils.data import DataLoader
+from torch import nn
+from torch.nn.utils import prune
+from torch.utils.data import DataLoader, Dataset
 
 import src.datasets as ds
-import src.models as models
+from src import models
 from src.augmentation import Augmentation_pipeline
-from src.metrics import compute_model_class_performance
+from src.testing import model_evaluation
 
 # simple post training pruning technique (global)
 # test the performance on a validation set (see the degradation on several metrics)
 # Setup logging
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
-logger = logging.getLogger(__name__)
+_logger = logging.getLogger(__name__)
 
 
-def apply_identity(parameters_to_prune):
+def apply_identity(parameters_to_prune: list) -> None:
+    """Apply identity pruning to the given parameters, effectively leaving them unpruned.
+
+    Args:
+        parameters_to_prune (list): List of (module, parameter_name) tuples to apply identity pruning.
+
+    """
     for module, name in parameters_to_prune:
         prune.identity(module, name)
 
 
-def global_unstructured_pruining(model: nn.Module, amount: float, kwargs: dict = None):
-    """
-    Perform global unstructured pruning on the model's Conv2d layers.
+def global_unstructured_pruining(model: nn.Module, amount: float) -> None:
+    """Perform global unstructured pruning on the model's Conv2d layers.
 
     Args:
+    ----
         model (nn.Module): The PyTorch model to prune.
         amount (float): The proportion of weights to prune globally.
-        kwargs (dict): Additional arguments (not used in this implementation).
-    """
 
+    """
     # Collect parameters to prune with names
     parameters_to_prune_with_names = [
         (name, module, "weight")
@@ -56,30 +63,32 @@ def global_unstructured_pruining(model: nn.Module, amount: float, kwargs: dict =
         apply_identity(parameters_to_prune)
 
     if torch.nn.utils.prune.is_pruned(model):
-        overall_nb_sparse_weigths, overall_nb_weigths = 0, 0
+        overall_nb_sparse_weights, overall_nb_weights = 0, 0
 
         # Display sparsity for each pruned module
         for name, module, param_name in parameters_to_prune_with_names:
-            nb_sparse_weigths = float(torch.sum(getattr(module, param_name) == 0))
+            nb_sparse_weights = float(torch.sum(getattr(module, param_name) == 0))
             nb_weights = float(getattr(module, param_name).nelement())
-            overall_nb_sparse_weigths += nb_sparse_weigths
-            overall_nb_weigths += nb_weights
-            sparsity = 100.0 * nb_sparse_weigths / nb_weights
-            logger.debug(f"Sparsity in {name}.{param_name}: {sparsity:.2f}%")
+            overall_nb_sparse_weights += nb_sparse_weights
+            overall_nb_weights += nb_weights
+            sparsity = 100.0 * nb_sparse_weights / nb_weights
+            _logger.debug("Sparsity in %s.%s: %.2f%%", name, param_name, sparsity)
 
-        logger.debug(
-            f"Overall Sparsity : {100 * overall_nb_sparse_weigths/overall_nb_weigths:2f}%"
-        ) if overall_nb_weigths > 0 else logging.debug("Overall Sparsity : 0%")
+        _logger.debug(
+            "Overall Sparsity : %.2f%%",
+            100 * overall_nb_sparse_weights / overall_nb_weights,
+        ) if overall_nb_weights > 0 else logging.debug("Overall Sparsity : 0%")
     else:
-        logger.debug("Error Pytorch does not recognize Pruning format !")
+        _logger.debug("Error Pytorch does not recognize Pruning format !")
 
 
-def apply_pruning_to_model(pruned_model: nn.Module):
-    """
-    Make pruning permanent by removing weight_orig and weight_mask, and remove the forward_pre_hook
+def apply_pruning_to_model(pruned_model: nn.Module) -> None:
+    """Make pruning permanent by removing weight_orig and weight_mask, and remove the forward_pre_hook.
 
     Args:
+    ----
         pruned_model (nn.Module): The PyTorch model that have been pruned.
+
     """
     if torch.nn.utils.prune.is_pruned(pruned_model):
         parameters_to_prune_with_names = [
@@ -97,11 +106,18 @@ def apply_pruning_to_model(pruned_model: nn.Module):
         logging.error("This model is not in Pytorch pruned format")
 
 
-def run_pruning_experiment(model_class, weights_path, dataset, sparsity_levels, device, kwargs):
-    """
-    Run an experiment to test the model at different levels of sparsity.
+def run_pruning_experiment(
+    model_class: nn.Module,
+    weights_path: str,
+    dataset: Dataset,
+    sparsity_levels: list[float],
+    device: str,
+    kwargs: dict,
+) -> pd.DataFrame:
+    """Run an experiment to test the model at different levels of sparsity.
 
     Args:
+    ----
         model_class (nn.Module): The model class to initialize.
         weights_path (str): Path to the model's weights file.
         dataset (Dataset): The dataset for evaluation.
@@ -110,7 +126,9 @@ def run_pruning_experiment(model_class, weights_path, dataset, sparsity_levels, 
         kwargs (dict): Additional arguments for model initialization.
 
     Returns:
+    -------
         pd.DataFrame: Results of the experiment.
+
     """
     results = []
 
@@ -118,23 +136,23 @@ def run_pruning_experiment(model_class, weights_path, dataset, sparsity_levels, 
     dataloader = DataLoader(dataset, batch_size=5, num_workers=4, pin_memory=True)
 
     for sparsity in sparsity_levels:
-        logging.info(f"Testing sparsity level: {sparsity * 100:.2f}%")
+        logging.info("Testing sparsity level: %.2f%%", sparsity * 100)
 
         # Clone the model to avoid modifying the original
         pruned_model = models.initialize_model(model_class, weights_path, kwargs, device=device)
 
         # Apply pruning
-        global_unstructured_pruining(pruned_model, amount=sparsity, kwargs=None)
+        global_unstructured_pruining(pruned_model, amount=sparsity)
 
         # Evaluate the model
-        dict_metrics = compute_model_class_performance(
+        dict_metrics = model_evaluation(
             model=pruned_model,
             dataloader=dataloader,
             num_classes=2,
             class_names=["No Change", "Change"],
             device=device,
             saving_method="display",
-            siamese=True,
+            is_siamese=True,
         )
 
         # Record results
@@ -150,8 +168,7 @@ def run_pruning_experiment(model_class, weights_path, dataset, sparsity_levels, 
         results.append(record)
 
     # Convert results to a DataFrame for display
-    results_df = pd.DataFrame(results)
-    return results_df
+    return pd.DataFrame(results)
 
 
 if __name__ == "__main__":
@@ -161,7 +178,7 @@ if __name__ == "__main__":
     # Model and dataset setup
     model_class = models.SiameseResNetUNet
     weights_path = "models/Levir_CD_Siamese_ResNet18_Unet_20250106-184502_best_model.pth"
-    dataset = ds.Levir_cd_dataset(
+    dataset = ds.LevirCDDataset(
         origin_dir="data/Levir-cd-v2",
         type="val",
         transform=Augmentation_pipeline(image_size=(256, 256), mean=None, std=None, mode="val"),

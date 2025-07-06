@@ -1,18 +1,24 @@
+from __future__ import annotations
+
+import logging
 from pathlib import Path
-from typing import List
+from typing import TYPE_CHECKING, ClassVar, List, Literal
 
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
 from PIL import Image
 
-from .base import Change_Detection_Dataset
+from .base import ChangeDetectionDataset
 from .utils import is_image_file
 
+if TYPE_CHECKING:
+    from src.augmentation import Augmentation_pipeline
 
-class Levir_cd_dataset(Change_Detection_Dataset):
-    """
-    LEVIR-CD Dataset for change detection.
+
+class LevirCDataset(ChangeDetectionDataset):
+    """LEVIR-CD Dataset for change detection.
+
     Inspired by the original Levir-cd dataset definition : https://github.com/justchenhao/STANet/blob/master/data/changedetection_dataset.py
     The dataset structure is assumed to be:
 
@@ -22,46 +28,61 @@ class Levir_cd_dataset(Change_Detection_Dataset):
         ├── label (contains change detection labels)
 
     Args:
+    ----
         origin_dir (str): Root directory for dataset (where A, B, and label are located).
-        type (str): Dataset type - "train", "val", or "test".
+        dataset_type (str): Dataset type - "train", "val", or "test".
         transform (callable, optional): Optional transform to be applied to the images and labels.
+
     """
 
-    MEAN = [0.387, 0.382, 0.325]
-    STD = [0.158, 0.150, 0.138]
+    MEAN: ClassVar[list[float]] = [0.387, 0.382, 0.325]
+    STD: ClassVar[list[float]] = [0.158, 0.150, 0.138]
 
-    def __init__(self, origin_dir=None, type="train", transform=None, **kwargs):
+    def __init__(
+        self,
+        origin_dir: str,
+        dataset_type: Literal["train", "val", "test", "infer"] = "train",
+        transform: Augmentation_pipeline | None = None,
+        n_classes: int = 2,
+        **kwargs,
+    ) -> None:
+        """Initialize LevirCD Dataset.
+
+        Args:
+            origin_dir (str): Origin directory.
+            dataset_type (str, optional): Dataset type, choose between ['train', 'val', 'test', 'infer']. Defaults to "train".
+            transform (Augmentation_pipeline | None, optional): Augmentation pipeline. Defaults to None.
+            n_classes (int, optional): number of classes. Defaults to 2.
+            **kwargs: other key arguments.
+        """
+        super().__init__(origin_dir, dataset_type, transform, n_classes)
         # Folder names
-        folder_A = "A"
-        folder_B = "B"
-        folder_L = "label"
 
-        self.type = type
+        self.dataset_type = dataset_type
         self.transform = transform
-        root_dir = Path(origin_dir) / self.type
+        root_dir = Path(origin_dir) / self.dataset_type
 
         # Set the path to each folder
-        self.A_paths = sorted([x for x in (root_dir / folder_A).glob("*.*") if is_image_file(x)])
-        self.B_paths = sorted([x for x in (root_dir / folder_B).glob("*.*") if is_image_file(x)])
-        self.L_paths = sorted([x for x in (root_dir / folder_L).glob("*.*") if is_image_file(x)])
+        self.A_paths = sorted([x for x in (root_dir / "A").glob("*.*") if is_image_file(x)])
+        self.B_paths = sorted([x for x in (root_dir / "B").glob("*.*") if is_image_file(x)])
+        self.L_paths = sorted([x for x in (root_dir / "label").glob("*.*") if is_image_file(x)])
 
-        print(f"Loaded {len(self)} {self.type} samples.")
+        logging.info("Loaded %d %s samples.", len(self), self.dataset_type)
 
-    def __len__(self):
-        """Returns the number of image pairs"""
+    def __len__(self) -> int:
+        """Return the number of image pairs."""
         return len(self.A_paths)
 
-    def __getitem__(self, index):
-        """Retrieve one sample of A, B, and label (if available)"""
-
+    def __getitem__(self, index) -> dict:
+        """Retrieve one sample of A, B, and label (if available)."""
         # Load image pairs (A, B)
-        A_img = Image.open(self.A_paths[index]).convert("RGB")  # Image before change
-        B_img = Image.open(self.B_paths[index]).convert("RGB")  # Image after change
+        img_a = Image.open(self.A_paths[index]).convert("RGB")  # Image before change
+        img_b = Image.open(self.B_paths[index]).convert("RGB")  # Image after change
         label_img = Image.open(self.L_paths[index]).convert("L")  # Label mask (grayscale)
 
         # Convert images to numpy arrays (Albumentations expects this)
-        pre_image = (np.array(A_img) / 255.0).astype(np.float32)
-        post_image = (np.array(B_img) / 255.0).astype(np.float32)
+        pre_image = (np.array(img_a) / 255.0).astype(np.float32)
+        post_image = (np.array(img_b) / 255.0).astype(np.float32)
         mask = np.array(label_img).astype(np.uint8)  # Convert to binary mask (0 or 1)
         mask = np.where(mask == 255, 1, 0)
 
@@ -78,12 +99,13 @@ class Levir_cd_dataset(Change_Detection_Dataset):
 
         return {"pre_image": pre_image, "post_image": post_image, "mask": mask}
 
-    def display_data(self, list_indices: List[int]) -> None:
-        """
-        Display the pre-change, post-change, and mask images for a list of indices.
+    def display_data(self, list_indices: list[int]) -> None:
+        """Display the pre-change, post-change, and mask images for a list of indices.
 
         Args:
-            list_indices: List[int]: List of indices to display data for.
+        ----
+            list_indices: list[int]: List of indices to display data for.
+
         """
         # Set up the plot
         num_images = len(list_indices)
@@ -121,10 +143,8 @@ class Levir_cd_dataset(Change_Detection_Dataset):
         plt.tight_layout()
         plt.show()
 
-    def compute_statistics(self):
-        """
-        Compute and display statistics about the dataset.
-        """
+    def compute_statistics(self) -> None:
+        """Compute Mean and Standard Deviation and update statistics about the dataset."""
         total_images = len(self)
         mean_sum = np.zeros(3)
         std_sum = np.zeros(3)
@@ -143,8 +163,8 @@ class Levir_cd_dataset(Change_Detection_Dataset):
         mean = mean_sum / (2 * total_images)
         std = std_sum / (2 * total_images)
 
-        print(f"Dataset Mean: {mean}")
-        print(f"Dataset Std Dev: {std}")
-        print("MEAN and STD Levir-cd Dataset have been updated")
+        logging.info("Dataset Mean: %f ", mean)
+        logging.info("Dataset Std Dev: %f", std)
         self.MEAN = mean
         self.STD = std
+        logging.info("MEAN and STD Levir-cd Dataset have been updated")

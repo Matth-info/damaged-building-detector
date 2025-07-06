@@ -7,8 +7,8 @@ from torch.nn.modules.loss import _Loss
 class Ensemble(_Loss):
     def __init__(
         self,
-        list_losses: Optional[List[_Loss]] = None,
-        weights: Optional[List[float]] = None,
+        list_losses: list[_Loss | None] = None,
+        weights: list[float | None] = None,
     ):
         super().__init__()
         self.list_losses = list_losses or []
@@ -29,8 +29,7 @@ class Ensemble(_Loss):
         return " / ".join(loss.__class__.__name__ for loss in self.list_losses)
 
     def forward(self, inputs: torch.Tensor, targets: torch.Tensor) -> torch.Tensor:
-        """
-        Computes the weighted ensemble loss.
+        """Computes the weighted ensemble loss.
 
         :param inputs: Predictions from the model.
         :param targets: Ground truth labels.

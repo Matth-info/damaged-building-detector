@@ -1,5 +1,5 @@
 # Config File for internal layer inspection
-model_class: siamese_resnet_unet
+model_class: is_siamese_resnet_unet
 model_params:
   in_channels: 3
   out_channels: 2

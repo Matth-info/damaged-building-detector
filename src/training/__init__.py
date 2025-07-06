@@ -1,10 +1,9 @@
-# This Folder breaks down training steps
+"""Package breaking down model training phase."""
+
 import torch
 
 from .train import Trainer
 from .utils import define_weighted_random_sampler, initialize_optimizer_scheduler
-
-__all__ = ["train", "testing", "Trainer", "initialize_optimizer_scheduler"]
 
 OPTIMIZER_MAP = {
     "AdamW": torch.optim.AdamW,

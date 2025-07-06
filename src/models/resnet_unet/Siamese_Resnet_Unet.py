@@ -1,13 +1,12 @@
 import torch
-import torch.nn as nn
+from torch import nn
 
 from .help_funcs import DecoderBlock, choose_resnet
 
 
 # Inpired by FC-Siam-diff. from FULLY CONVOLUTIONAL SIAMESE NETWORKS FORCHANGE DETECTION by  Rodrigo Caye Daudt, Bertrand Le Saux, Alexandre Boulch
 class SiameseResNetUNet(nn.Module):
-    """
-    Siamese U-Net with a ResNet backbone for remote sensing change detection.
+    """Siamese U-Net with a ResNet backbone for remote sensing change detection.
 
     This model compares pre- and post-event images using a shared encoder
     and a U-Net-style decoder. It supports two fusion modes:
@@ -15,6 +14,7 @@ class SiameseResNetUNet(nn.Module):
         - "conc": Concatenates feature maps.
 
     Attributes:
+    ----------
         in_channels (int): Number of input channels.
         out_channels (int): Number of output channels.
         mode (str): Feature fusion mode ("diff" or "conc").
@@ -23,6 +23,7 @@ class SiameseResNetUNet(nn.Module):
         freeze_backbone (bool): Whether to freeze backbone layers.
 
     Methods:
+    -------
         freeze_backbone(): Freezes the encoder layers to prevent weight updates.
         forward_branch(x): Processes an image through the encoder.
         forward(x1, x2): Processes both images and predicts a change mask.
@@ -31,8 +32,10 @@ class SiameseResNetUNet(nn.Module):
         load(file_path): Loads the model weights.
 
     Example:
+    -------
         >>> model = SiameseResNetUNet(in_channels=3, out_channels=2, mode="diff")
         >>> output = model(x1, x2)  # x1 and x2 are input images
+
     """
 
     def __init__(
@@ -145,7 +148,7 @@ class SiameseResNetUNet(nn.Module):
         e3 = self.encoder3(e2)
         return x, e1, e2, e3
 
-    def forward(self, x1, x2):
+    def forward(self, x1, x2) -> torch.Tensor:
         # Process both inputs through the shared encoder
         x1, e1_1, e2_1, e3_1 = self.forward_branch(x1)
         x2, e1_2, e2_2, e3_2 = self.forward_branch(x2)
