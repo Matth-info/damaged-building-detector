@@ -1,0 +1,62 @@
+# Exclude a variety of commonly ignored directories.
+exclude = [
+    ".bzr",
+    ".direnv",
+    ".eggs",
+    ".git",
+    ".git-rewrite",
+    ".hg",
+    ".ipynb_checkpoints",
+    ".mypy_cache",
+    ".nox",
+    ".pants.d",
+    ".pyenv",
+    ".pytest_cache",
+    ".pytype",
+    ".ruff_cache",
+    ".svn",
+    ".tox",
+    ".venv",
+    ".vscode",
+    "__pypackages__",
+    "_build",
+    "buck-out",
+    "build",
+    "dist",
+    "node_modules",
+    "site-packages",
+    "venv",
+]
+
+extend-exclude = ["tests", "src/losses", "src/metrics", "src/models"]
+
+# ruff.toml
+line-length = 99
+indent-width = 4
+
+# Assume Python 3.9
+target-version = "py39"
+
+[lint]
+select = ["E", "F", "D", "B"]
+ignore = ["COM812", "E203", "E402", "E501", "F401", "F841", "D100", "FA100", "TRY003", "EM101", "D213","D211", "S311", "N812"]
+
+# [lint.pydoclint]
+# Skip docstrings which fit on a single line.
+# ignore-one-line-docstrings = true
+
+[lint.pylint]
+max-args = 15
+max-statements = 75
+
+[lint.pydocstyle]
+# Use Google-style docstrings.
+convention = "google"
+
+[format]
+quote-style = "double"
+indent-style = "space"
+line-ending = "auto"
+skip-magic-trailing-comma = false
+docstring-code-format = false
+docstring-code-line-length = "dynamic"

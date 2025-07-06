@@ -7,8 +7,8 @@ from torch.nn import Conv2d, InstanceNorm2d, Module, PReLU, Sequential, Upsample
 class PixelwiseLinear(Module):
     def __init__(
         self,
-        fin: List[int],
-        fout: List[int],
+        fin: list[int],
+        fout: list[int],
         last_activation: Module = None,
     ) -> None:
         assert len(fout) == len(fin)
@@ -22,7 +22,7 @@ class PixelwiseLinear(Module):
                     PReLU() if i < n - 1 or last_activation is None else last_activation,
                 )
                 for i in range(n)
-            ]
+            ],
         )
 
     def forward(self, x: Tensor) -> Tensor:
@@ -59,8 +59,8 @@ class MixingMaskAttentionBlock(Module):
         self,
         ch_in: int,
         ch_out: int,
-        fin: List[int],
-        fout: List[int],
+        fin: list[int],
+        fout: list[int],
         generate_masked: bool = False,
     ):
         super().__init__()
@@ -95,7 +95,7 @@ class UpMask(Module):
             InstanceNorm2d(nout),
         )
 
-    def forward(self, x: Tensor, y: Optional[Tensor] = None) -> Tensor:
+    def forward(self, x: Tensor, y: Tensor | None = None) -> Tensor:
         x = self._upsample(x)
         if y is not None:
             x = x * y

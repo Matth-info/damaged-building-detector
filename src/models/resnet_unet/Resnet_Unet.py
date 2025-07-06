@@ -1,10 +1,12 @@
 import torch
-import torch.nn as nn
+from torch import nn
 
 from .help_funcs import DecoderBlock, choose_resnet
 
 
 class ResNet_UNET(nn.Module):
+    """U-Net architecture with a ResNet backbone for semantic segmentation tasks."""
+
     def __init__(
         self,
         in_channels=3,
@@ -13,12 +15,13 @@ class ResNet_UNET(nn.Module):
         pretrained=True,
         freeze_backbone=True,
         **kwargs,
-    ):
+    ) -> None:
         super().__init__()
 
         # Modify first layer of ResNet34 to accept custom number of channels
         self.filters, resnet = choose_resnet(
-            model_name=backbone_name, pretrained=pretrained
+            model_name=backbone_name,
+            pretrained=pretrained,
         )  # Change this line
 
         # Modify input channels if not 3
@@ -77,9 +80,7 @@ class ResNet_UNET(nn.Module):
             self.freeze_backbone(in_channels)
 
     def freeze_backbone(self, in_channels):
-        """
-        Freezes the weights of the ResNet backbone layers to prevent them from updating during training.
-        """
+        """Freezes the weights of the ResNet backbone layers to prevent them from updating during training."""
         list_layers = [self.firstbn, self.encoder1, self.encoder2, self.encoder3]
         if in_channels == 3:
             list_layers = [self.firstconv] + list_layers
@@ -88,7 +89,7 @@ class ResNet_UNET(nn.Module):
             for param in layer.parameters():
                 param.requires_grad = False
 
-    def forward(self, x):
+    def forward(self, x) -> torch.Tensor:
         x = self.firstconv(x)
         x = self.firstbn(x)
         x = self.firstrelu(x)

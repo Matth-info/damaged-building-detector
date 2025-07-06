@@ -14,7 +14,7 @@ class JaccardLoss(_Loss):
     def __init__(
         self,
         mode: str,
-        classes: Optional[List[int]] = None,
+        classes: list[int | None] = None,
         log_loss: bool = False,
         from_logits: bool = True,
         smooth: float = 0.0,
@@ -24,6 +24,7 @@ class JaccardLoss(_Loss):
         It supports binary, multiclass and multilabel cases
 
         Args:
+        ----
             mode: Loss mode 'binary', 'multiclass' or 'multilabel'
             classes:  List of classes that contribute in loss computation. By default, all channels are included.
             log_loss: If True, loss computed as `- log(jaccard_coeff)`, otherwise `1 - jaccard_coeff`
@@ -38,6 +39,7 @@ class JaccardLoss(_Loss):
 
         Reference
             https://github.com/BloodAxe/pytorch-toolbelt
+
         """
         assert mode in {BINARY_MODE, MULTILABEL_MODE, MULTICLASS_MODE}
         super().__init__()

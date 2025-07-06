@@ -7,13 +7,17 @@ from torchvision.models.detection.mask_rcnn import MaskRCNNPredictor
 
 
 class Maskrcnn(nn.Module):
-    def __init__(self, num_classes: int, hidden_layer_dim=256, pretrained: bool = True, **kwargs):
-        """
-        Wrapper for Mask R-CNN instance segmentation model.
+    """Wrapper Mask-R-CNN with Resnet50 backbone from torchvision."""
 
-        Parameters:
+    def __init__(self, num_classes: int, hidden_layer_dim=256, pretrained: bool = True) -> None:
+        """Wrapper for Mask R-CNN instance segmentation model.
+
+        Args:
+        ----------
             num_classes (int): Number of classes for the instance segmentation task, including the background.
+            hidden_layer_dim (int): Number of hidden layers.
             pretrained (bool): Whether to load the model with pre-trained weights on COCO.
+
         """
         super().__init__()
         # Load the pre-trained Mask R-CNN model
@@ -28,37 +32,43 @@ class Maskrcnn(nn.Module):
         in_features_mask = self.model.roi_heads.mask_predictor.conv5_mask.in_channels
         hidden_layer = hidden_layer_dim
         self.model.roi_heads.mask_predictor = MaskRCNNPredictor(
-            in_features_mask, hidden_layer, num_classes
+            in_features_mask,
+            hidden_layer,
+            num_classes,
         )
 
-    def forward(self, images, targets=None):
-        """
-        Forward pass for the model.
+    def forward(self, images, targets=None) -> torch.Tensor:
+        """Forward pass for the model.
 
-        Parameters:
+        Args:
+        ----------
             images (list[Tensor]): List of input images as tensors.
             targets (list[dict], optional): List of target dictionaries with 'boxes', 'labels', and 'masks'.
 
         Returns:
+        -------
             dict or list[dict]: If training, returns losses; if evaluating, returns predictions.
+
         """
         return self.model(images, targets)
 
     @torch.no_grad()
     def predict_sem_seg(self, images, score_threshold: float = 0.5, mask_threshold: float = 0.5):
-        """
-        Predict semantic segmentation masks while resolving overlapping regions.
+        """Predict semantic segmentation masks while resolving overlapping regions.
 
         Args:
+        ----
             images (Tensor): Batch of input images.
             score_threshold (float): Minimum confidence score to consider a prediction.
             mask_threshold (float): Threshold for binarizing instance masks.
 
         Returns:
+        -------
             Tensor of semantic segmentation masks for the batch.
+
         """
         preds = self.model(images)
-        # Model returns List[Dict] with keys: boxes, labels, scores, and masks.
+        # Model returns list[Dict] with keys: boxes, labels, scores, and masks.
         semantic_masks = []
 
         # Iterate over predictions for each image in the batch
@@ -74,10 +84,12 @@ class Maskrcnn(nn.Module):
 
                 # Create a score map and a label map
                 score_map = torch.zeros_like(
-                    binarized_masks[0], dtype=torch.float32
+                    binarized_masks[0],
+                    dtype=torch.float32,
                 )  # Shape: [H, W]
                 label_map = torch.zeros_like(
-                    binarized_masks[0], dtype=torch.int64
+                    binarized_masks[0],
+                    dtype=torch.int64,
                 )  # Shape: [H, W]
 
                 # Iterate through each instance
@@ -99,14 +111,16 @@ class Maskrcnn(nn.Module):
 
     @torch.no_grad()
     def predict(self, images):
+        """MaskRCNN predictions."""
         return self.model(images)
 
     def save(self, filepath: str):
-        """
-        Save the model's state dictionary and configuration.
+        """Save the model's state dictionary and configuration.
 
-        Parameters:
+        Args:
+        ----------
             filepath (str): Path to save the model file.
+
         """
         torch.save(
             {
@@ -118,11 +132,12 @@ class Maskrcnn(nn.Module):
         print(f"Model saved to {filepath}")
 
     def load(self, filepath: str):
-        """
-        Load the model's state dictionary and configuration.
+        """Load the model's state dictionary and configuration.
 
-        Parameters:
+        Args:
+        ----------
             filepath (str): Path to the saved model file.
+
         """
         checkpoint = torch.load(filepath, map_location="cpu")  # Adjust map_location if needed
         self.load_state_dict(checkpoint["state_dict"])

@@ -1,3 +1,7 @@
+from __future__ import annotations
+
+from typing import TYPE_CHECKING, Any, Literal
+
 import albumentations as A
 import matplotlib.pyplot as plt
 import numpy as np
@@ -6,24 +10,59 @@ from PIL import Image
 from torchvision.transforms import v2
 from tqdm import tqdm
 
+if TYPE_CHECKING:
+    from collections.abc import Generator
+
+    from src.augmentation import Augmentation_pipeline
+
 
 class Inference:
+    """Perform inference on images using a sliding window approach for semantic segmentation models.
+
+    Attributes:
+    ----------
+    model : torch.nn.Module
+        The trained semantic segmentation model.
+    pre_image : np.ndarray
+        Pre-change image.
+    post_image : np.ndarray
+        Post-change image (used if mode is 'siamese').
+    window_size : int
+        Size of the sliding window.
+    stride : int
+        Stride for the sliding window.
+    device : str
+        Device to run inference on ('cuda' or 'cpu').
+    num_classes : int
+        Number of classes for segmentation.
+    mode : str
+        Inference mode, e.g., 'siamese'.
+    transform : callable
+        Data augmentation or preprocessing function.
+
+    Methods:
+    -------
+    infer()
+        Perform inference using the sliding window approach.
+
+    """
+
     def __init__(
         self,
         model: torch.nn.Module,
+        transform: Augmentation_pipeline,
         pre_image: np.ndarray = None,
         post_image: np.ndarray = None,
         window_size: int = 512,
         stride: int = 100,
         device: str = "cuda",
         num_classes: int = 5,
-        mode: str = "siamese",
-        transform=None,
-    ):
-        """
-        Initialize the Inference class.
+        mode: Literal["siamese", "simple"] = "siamese",
+    ) -> None:
+        """Initialize the Inference class.
 
         Args:
+        ----
             model (torch.nn.Module): The trained semantic segmentation model.
             pre_image (Image): Pre-change image.
             post_image (Image): Post-change image.
@@ -32,9 +71,8 @@ class Inference:
             stride (int): Stride for the sliding window.
             device (str): Device to run inference on ('cuda' or 'cpu').
             transform : Data Augmentation functions
+            mode (str): Choose between siamese and simple inputs.
         """
-        assert mode in ["siamese", None]
-
         self.mode = mode
         self.model = model.to(device)
         self.pre_image = pre_image
@@ -46,15 +84,19 @@ class Inference:
         self.num_classes = num_classes
         self.transform = transform
 
-    def _sliding_window(self, image: np.ndarray):
-        """
-        Generator for sliding window patches.
+    def _sliding_window(
+        self, image: np.ndarray
+    ) -> Generator[tuple[int, int, np.ndarray], Any, None]:
+        """Generator for sliding window patches.
 
         Args:
+        ----
             image (np.ndarray): Input image as a NumPy array.
 
         Yields:
+        ------
             tuple: (x, y, patch) where (x, y) is the top-left corner of the patch.
+
         """
         h, w, _ = image.shape
         for y in range(0, h - self.window_size + 1, self.stride):
@@ -62,16 +104,18 @@ class Inference:
                 patch = image[y : y + self.window_size, x : x + self.window_size]
                 yield x, y, patch
 
-    def _merge_patches(self, patches, image_shape):
-        """
-        Merge patches back into the full-size image.
+    def _merge_patches(self, patches: list, image_shape: tuple) -> np.ndarray:
+        """Merge patches back into the full-size image.
 
         Args:
+        ----
             patches (list): List of (x, y, patch_pred) tuples.
             image_shape (tuple): Shape of the original image (height, width).
 
         Returns:
+        -------
             np.ndarray: Merged image with shape (5, height, width).
+
         """
         full_pred = np.zeros((self.num_classes, image_shape[0], image_shape[1]), dtype=np.float32)
         count_map = np.zeros((image_shape[0], image_shape[1]), dtype=np.float32)
@@ -87,12 +131,13 @@ class Inference:
 
         return full_pred
 
-    def infer(self):
-        """
-        Perform inference using the sliding window approach.
+    def infer(self) -> np.ndarray:
+        """Perform inference using the sliding window approach.
 
         Returns:
+        -------
             np.ndarray: Full-size prediction with shape (5, height, width).
+
         """
         self.model.eval()
 
@@ -110,8 +155,8 @@ class Inference:
                     post_patch = (
                         self.transform(
                             Image.fromarray(
-                                post_image_np[y : y + self.window_size, x : x + self.window_size]
-                            )
+                                post_image_np[y : y + self.window_size, x : x + self.window_size],
+                            ),
                         )
                         .unsqueeze(0)
                         .to(self.device)
@@ -125,15 +170,17 @@ class Inference:
         return self._merge_patches(patches, image_shape)
 
 
-def merge_images(images):
-    """
-    Merge a list of images into a single large image by concatenating them horizontally.
+def merge_images(images: list[Image.Image]) -> Image.Image:
+    """Merge a list of images into a single large image by concatenating them horizontally.
 
     Args:
+    ----
         images (list of Image): List of PIL Image objects to merge.
 
     Returns:
+    -------
         Image: The merged image.
+
     """
     # Get the maximum height of all images
     max_height = max(image.height for image in images)
@@ -156,13 +203,14 @@ def merge_images(images):
     return merged_image
 
 
-def plot_results_building(image: Image, prediction: np.ndarray, color_dict: dict):
-    """
-    Plot the pre-change image, post-change image, and overlay the prediction.
+def plot_results_building(image: Image.Image, prediction: np.ndarray, color_dict: dict) -> None:
+    """Plot the pre-change image, post-change image, and overlay the prediction.
 
     Args:
+    ----
         image (Image): image.
         prediction (np.ndarray): Prediction array with shape (height, width).
+        color_dict (dict): Color dictionary to turn pixel level prediction into colorized mask.
     """
     # Create an empty array to store the color-mapped prediction mask
     height, width = prediction.shape

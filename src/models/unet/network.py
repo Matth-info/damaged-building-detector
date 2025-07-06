@@ -1,13 +1,26 @@
 import torch
-import torch.nn as nn
 import torch.nn.functional as F
 import torch.utils.checkpoint
+from torch import nn
+import logging
+from typing import Any
 
 from .help_funcs import DoubleConv, Down, OutConv, Up
 
 
 class UNet(nn.Module):
-    def __init__(self, n_channels, n_classes, bilinear=False, **kwargs):
+    """Unet model."""
+
+    def __init__(
+        self, n_channels: int = 3, n_classes: int = 2, *, bilinear: bool = False, **kwargs: Any
+    ) -> None:
+        """Original Unet implementation with 4 downscaling 4 upscaling layers.
+
+        Args:
+            n_channels (int): number of input channels (e.g RGB image requires 3 n_channels)
+            n_classes (int): number of classes in the semantic segmentation task.
+            bilinear (bool, optional): choose bilinear upscaling (reduce the number of weights in the model.). Defaults to False.
+        """
         super().__init__()
         self.n_channels = n_channels
         self.n_classes = n_classes
@@ -25,7 +38,8 @@ class UNet(nn.Module):
         self.up4 = Up(128, 64, bilinear)
         self.outc = OutConv(64, n_classes)
 
-    def forward(self, x):
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """Forward pass."""
         x1 = self.inc(x)
         x2 = self.down1(x1)
         x3 = self.down2(x2)
@@ -35,10 +49,9 @@ class UNet(nn.Module):
         x = self.up2(x, x3)
         x = self.up3(x, x2)
         x = self.up4(x, x1)
-        logits = self.outc(x)
-        return logits
+        return self.outc(x)
 
-    def use_checkpointing(self):
+    def use_checkpointing(self) -> None:
         """Apply checkpointing to blocks of layers for memory efficiency."""
         self.inc = torch.utils.checkpoint.checkpoint(self.inc)
         self.down1 = torch.utils.checkpoint.checkpoint(self.down1)
@@ -52,20 +65,20 @@ class UNet(nn.Module):
         self.outc = torch.utils.checkpoint.checkpoint(self.outc)
 
     @torch.no_grad()
-    def predict(self, x):
-        """Inference method"""
+    def predict(self, x: torch.Tensor) -> None:
+        """Inference method."""
         outputs = self.forward(x)
         return torch.argmax(outputs, dim=1).cpu().numpy()
 
-    def save(self, checkpoint_path):
+    def save(self, checkpoint_path: str) -> None:
         """Saves the model's state_dict to the specified path."""
         torch.save(self.state_dict(), checkpoint_path)
-        print(f"Model checkpoint saved to {checkpoint_path}")
+        logging.info("Model checkpoint saved to %s", checkpoint_path)
 
-    def load(self, checkpoint_path, device):
+    def load(self, checkpoint_path: str, device: str) -> None:
         """Loads the model's state_dict from the specified path."""
         # Load the state_dict from the checkpoint
         state_dict = torch.load(checkpoint_path, map_location=device)
         # Load the state_dict into the model
         self.load_state_dict(state_dict)
-        print(f"Model checkpoint loaded from {checkpoint_path}")
+        logging.info("Model checkpoint loaded from %s", checkpoint_path)

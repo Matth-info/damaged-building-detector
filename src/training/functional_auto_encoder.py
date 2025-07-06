@@ -3,15 +3,14 @@ from datetime import datetime
 
 import numpy as np
 import torch
-import torch.nn as nn
+from torch import nn
 from torch.amp import GradScaler, autocast
 from torch.nn import MSELoss
 from torch.optim import Adam
 from torch.utils.data import DataLoader, Dataset
 from torch.utils.tensorboard import SummaryWriter
 from tqdm import tqdm
-
-__all__ = ["train", "find_threshold"]
+from pathlib import Path
 
 
 def train(
@@ -20,7 +19,7 @@ def train(
     val_dataset: Dataset = None,
     num_epochs: int = 20,
     batch_size: int = 64,
-    criterion: nn.Module = MSELoss(),
+    criterion: nn.Module | None = None,
     learning_rate: float = 1e-3,
     log_dir: str = "../logs",
     model_dir: str = "../models",
@@ -30,10 +29,10 @@ def train(
     use_amp: bool = True,
     save_best_model: bool = True,
 ):
-    """
-    Train an autoencoder with TensorBoard logging and GPU optimizations.
+    """Train an autoencoder with TensorBoard logging and GPU optimizations.
 
     Args:
+    ----
         model (nn.Module): The autoencoder model to train.
         train_dataset (Dataset): Dataset for training.
         val_dataset (Dataset, optional): Dataset for validation. Defaults to None.
@@ -50,14 +49,16 @@ def train(
         save_best_model (bool): Save the best model based on validation loss.
 
     Returns:
+    -------
         None
+
     """
     # Initialize paths and logging
     timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
-    log_dir = os.path.join(log_dir, f"{experiment_name}_{timestamp}")
+    log_dir = Path(log_dir) / f"{experiment_name}_{timestamp}"
     print(f"Experiment logs will be recorded at {log_dir}")
-    os.makedirs(model_dir, exist_ok=True)
-    os.makedirs(log_dir, exist_ok=True)
+    Path.mkdir(model_dir, exist_ok=True)
+    Path.mkdir(log_dir, exist_ok=True)
 
     # Set up device, model, optimizer, and loss
     model = model.to(device)
@@ -75,7 +76,7 @@ def train(
                 "learning_rate": learning_rate,
                 "use_amp": use_amp,
                 "device": device,
-            }
+            },
         ),
     )
 
@@ -155,13 +156,13 @@ def train(
             val_loss /= len(val_loader)
             writer.add_scalar("Loss/Validation", val_loss, epoch)
             print(
-                f"Epoch {epoch + 1}/{num_epochs}, Train Loss: {train_loss:.4f} / Validation Loss: {val_loss:.4f}"
+                f"Epoch {epoch + 1}/{num_epochs}, Train Loss: {train_loss:.4f} / Validation Loss: {val_loss:.4f}",
             )
 
             # Save the best model
             if save_best_model and val_loss < best_val_loss:
                 best_val_loss = val_loss
-                best_model_path = os.path.join(model_dir, f"{experiment_name}_best.pth")
+                best_model_path = Path(model_dir) / f"{experiment_name}_best.pth"
                 torch.save(model.state_dict(), best_model_path)
                 print(f"Best model saved at {best_model_path}")
 
@@ -173,17 +174,17 @@ def train(
     # Final logging
     writer.close()
     print(
-        f"Training complete. Logs saved to: {log_dir} and best model saved at : {best_model_path}"
+        f"Training complete. Logs saved to: {log_dir} and best model saved at : {best_model_path}",
     )
 
     return best_model_path
 
 
 def find_threshold(model, data, loss_fn, device, confidence_interval=0.95):
-    """
-    Find a reconstruction loss threshold based on the training data.
+    """Find a reconstruction loss threshold based on the training data.
 
     Args:
+    ----
         model (nn.Module): The autoencoder model.
         data (Dataset): The dataset to compute reconstruction loss.
         loss_fn (function): The loss function to compute reconstruction error.
@@ -191,9 +192,11 @@ def find_threshold(model, data, loss_fn, device, confidence_interval=0.95):
         confidence_interval (float, optional): Confidence interval for threshold. Defaults to 0.95.
 
     Returns:
+    -------
         threshold (float): The threshold value for reconstruction loss.
         mean_loss (float): The mean reconstruction loss.
         std_loss (float): The standard deviation of the reconstruction loss.
+
     """
     data_loader = DataLoader(data, batch_size=5, shuffle=True, num_workers=8)
 

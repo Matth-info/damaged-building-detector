@@ -1,3 +1,3 @@
-from .utils import renormalize_image
+"""Data processing package."""
 
-__all__ = ["renormalize_image"]
+from .utils import renormalize_image

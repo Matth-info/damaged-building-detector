@@ -11,23 +11,23 @@ import torch
 from PIL import Image, ImageDraw
 from tqdm import tqdm
 
-from .base import Segmentation_Dataset
+from .base import SegmentationDataset
 
 
-class Puerto_Rico_Building_Dataset(Segmentation_Dataset):
-    """
-    Initializes the dataset with directories for pre- and post-disaster images and masks.
+class Puerto_Rico_Building_Dataset(SegmentationDataset):
+    """Initializes the dataset with directories for pre- and post-disaster images and masks.
 
     Args:
         base_dir (str): Base directory path containing all subdirectories.
         pre_disaster_dir (str): Directory with pre-disaster images.
         post_disaster_dir (str): Directory with post-disaster images.
         mask_dir (str): Directory with segmentation masks.
-        transform (Optional[A.Compose]): Albumentations transformation pipeline.
+        transform (A.Compose | None): Albumentations transformation pipeline.
         extension (str): File extension for images (default is 'jpg').
         cloud_filter_params (dict): Parameters for the cloud filter model.
         preprocessing_mode (str): Mode for filtering ('none', 'online', 'offline').
         filtered_list_path (str): Path to save/load filtered filenames for offline mode.
+
     """
 
     MEAN = None
@@ -38,19 +38,37 @@ class Puerto_Rico_Building_Dataset(Segmentation_Dataset):
         base_dir: str,
         pre_disaster_dir: str,
         post_disaster_dir: str,
-        mask_dir: str,
-        transform: Optional[A.Compose] = None,
+        type: str = "train",
+        mask_dir: str = None,
+        transform: A.Compose | None = None,
         extension: str = "jpg",
         cloud_filter_params=None,
-        preprocessing_mode: Optional[str] = "none",  # 'none', 'online', or 'offline'
-        filtered_list_path: Optional[str] = None,  # Path to save/load filtered filenames
+        preprocessing_mode: str | None = None,  # None, 'online', or 'offline'
+        filtered_list_path: str | None = None,  # Path to save/load filtered filenames
+        n_classes: int = None,
         **kwargs,
-    ):
+    ) -> None:
+        """Initialize the Puerto Rico Building Dataset with directories for pre- and post-disaster images and masks.
+
+        Args:
+            base_dir (str): Base directory path containing all subdirectories.
+            pre_disaster_dir (str): Directory with pre-disaster images.
+            post_disaster_dir (str): Directory with post-disaster images.
+            type (str): Dataset type, e.g., 'train' or 'test'.
+            mask_dir (str): Directory with segmentation masks.
+            transform (A.Compose | None): Albumentations transformation pipeline.
+            extension (str): File extension for images (default is 'jpg').
+            cloud_filter_params (dict): Parameters for the cloud filter model.
+            preprocessing_mode (str): Mode for filtering ('none', 'online', 'offline').
+            filtered_list_path (str): Path to save/load filtered filenames for offline mode.
+            n_classes (int): Number of classes.
+            **kwargs: Additional keyword arguments.
+        """
+        super().__init__(origin_dir=base_dir, type=type, transform=transform, n_classes=n_classes)
         self.base_dir = Path(base_dir)
         self.pre_disaster_dir = self.base_dir / pre_disaster_dir
         self.post_disaster_dir = self.base_dir / post_disaster_dir
         self.mask_dir = self.base_dir / mask_dir
-        self.transform = transform
         self.extension = extension
         self.filename_pattern = re.compile(r"tile_\d+_\d+")
         self.cloud_filter_params = cloud_filter_params
@@ -78,21 +96,23 @@ class Puerto_Rico_Building_Dataset(Segmentation_Dataset):
             self.cloud_filter = model_class.load(file_path=file_path).eval()  # Evaluation mode
             self.cloud_filter.to(device)
             print(
-                f"A {model_class.__class__.__name__} model has been loaded from {file_path} on {device}."
+                f"A {model_class.__class__.__name__} model has been loaded from {file_path} on {device}.",
             )
         else:
             self.cloud_filter = None
 
-    def cloud_filter_batch(self, batch) -> List[bool]:
-        """
-        Filters a batch of images based on cloud reconstruction loss.
+    def cloud_filter_batch(self, batch) -> list[bool]:
+        """Filters a batch of images based on cloud reconstruction loss.
 
         Args:
+        ----
             batch (dict): A dictionary containing "pre_image" and "post_image".
                         Each key maps to a tensor of shape [batch_size, channels, height, width].
 
         Returns:
+        -------
             dict: A dictionary containing filtered "image_pre", "image_post", and a "mask" indicating non-cloudy images.
+
         """
         # Extract parameters
         loss_fn = self.cloud_filter_params.get("loss")(reduction="none")  # Use non-aggregated loss
@@ -110,10 +130,10 @@ class Puerto_Rico_Building_Dataset(Segmentation_Dataset):
 
             # Compute pixel-wise losses
             loss_pre = loss_fn(reconstructed_pre_images, pre_images).mean(
-                dim=[1, 2, 3]
+                dim=[1, 2, 3],
             )  # Per-image loss
             loss_post = loss_fn(reconstructed_post_images, post_images).mean(
-                dim=[1, 2, 3]
+                dim=[1, 2, 3],
             )  # Per-image loss
 
             # Determine cloudiness based on threshold
@@ -125,10 +145,9 @@ class Puerto_Rico_Building_Dataset(Segmentation_Dataset):
             # Return results
             return not_cloudy.cpu().numpy()
 
-    def _offline_filter_images(self) -> List[str]:
+    def _offline_filter_images(self) -> list[str]:
         """Applies offline cloud filtering and saves filtered filenames."""
-
-        if self.filtered_list_path and os.path.exists(self.filtered_list_path):
+        if self.filtered_list_path and Path.exists(self.filtered_list_path):
             # Load precomputed filtered list from CSV file
             print(f"Loading filtered filenames from {self.filtered_list_path}...")
             with open(self.filtered_list_path, newline="") as f:
@@ -159,12 +178,13 @@ class Puerto_Rico_Building_Dataset(Segmentation_Dataset):
         # save the filtered_filenames in a txt files
         return filtered_filenames
 
-    def _find_image_filenames(self) -> List[str]:
-        """
-        Finds and returns a list of filenames common to pre, post, and mask directories.
+    def _find_image_filenames(self) -> list[str]:
+        """Finds and returns a list of filenames common to pre, post, and mask directories.
 
         Returns:
-            List[str]: Sorted list of filenames (without extensions) common to all directories.
+        -------
+            list[str]: Sorted list of filenames (without extensions) common to all directories.
+
         """
         # Collect file stems (base names without extensions)
         pre_files = {f.stem for f in self.pre_disaster_dir.glob(f"*.{self.extension}")}
@@ -181,31 +201,33 @@ class Puerto_Rico_Building_Dataset(Segmentation_Dataset):
         """Returns the total number of samples in the dataset."""
         return len(self.image_filenames)
 
-    def __getitem__(self, idx: int) -> Dict[str, torch.Tensor]:
-        """
-        Fetches and returns a single dataset sample with optional transformations.
+    def __getitem__(self, idx: int) -> dict[str, torch.Tensor]:
+        """Fetches and returns a single dataset sample with optional transformations.
 
         Args:
+        ----
             idx (int): Index of the sample to retrieve.
 
         Returns:
-            Dict[str, torch.Tensor]: Dictionary containing pre- and post-disaster images and mask.
+        -------
+            dict[str, torch.Tensor]: Dictionary containing pre- and post-disaster images and mask.
+
         """
         # Retrieve the filename based on the index
         image_name = self.image_filenames[idx]
 
         # Load images and mask, converting to appropriate modes (RGB for images, grayscale for mask)
         pre_image = np.array(
-            Image.open(self.pre_disaster_dir / f"{image_name}.{self.extension}").convert("RGB")
+            Image.open(self.pre_disaster_dir / f"{image_name}.{self.extension}").convert("RGB"),
         ).astype(np.float32)
 
         post_image = np.array(
-            Image.open(self.post_disaster_dir / f"{image_name}.{self.extension}").convert("RGB")
+            Image.open(self.post_disaster_dir / f"{image_name}.{self.extension}").convert("RGB"),
         ).astype(np.float32)
 
         mask_image = (
             np.array(
-                Image.open(self.mask_dir / f"{image_name}_mask.{self.extension}").convert("L")
+                Image.open(self.mask_dir / f"{image_name}_mask.{self.extension}").convert("L"),
             )
             > 0
         ).astype(np.uint8)
@@ -240,38 +262,44 @@ class Puerto_Rico_Building_Dataset(Segmentation_Dataset):
                     pre_image.shape[2],
                 )  # Height and width of the images
                 pre_image = torch.zeros(
-                    (3, h, w), dtype=torch.float32
+                    (3, h, w),
+                    dtype=torch.float32,
                 )  # Zero tensor for pre-image
                 post_image = torch.zeros(
-                    (3, h, w), dtype=torch.float32
+                    (3, h, w),
+                    dtype=torch.float32,
                 )  # Zero tensor for post-image
                 mask_image = torch.zeros((h, w), dtype=torch.long)  # Zero tensor for mask
 
         return {"pre_image": pre_image, "post_image": post_image, "mask": mask_image}
 
     def open_as_array(self, idx: int, invert: bool = False) -> tuple:
-        """
-        Opens and returns pre- and post-disaster images as numpy arrays with optional inversion.
+        """Opens and returns pre- and post-disaster images as numpy arrays with optional inversion.
 
         Args:
+        ----
             idx (int): Index of the sample to open.
             invert (bool): If True, the images are transposed to channel-first format.
 
         Returns:
+        -------
             tuple: Pre- and post-disaster images as numpy arrays.
+
         """
         image_name = self.image_filenames[idx]
         pre_image = (
             np.array(
-                Image.open(self.pre_disaster_dir / f"{image_name}.{self.extension}").convert("RGB")
+                Image.open(self.pre_disaster_dir / f"{image_name}.{self.extension}").convert(
+                    "RGB"
+                ),
             )
             / 255.0
         )
         post_image = (
             np.array(
                 Image.open(self.post_disaster_dir / f"{image_name}.{self.extension}").convert(
-                    "RGB"
-                )
+                    "RGB",
+                ),
             )
             / 255.0
         )
@@ -284,24 +312,27 @@ class Puerto_Rico_Building_Dataset(Segmentation_Dataset):
         return pre_image, post_image
 
     def open_mask(self, idx: int) -> np.ndarray:
-        """
-        Opens and returns the mask image as a numpy array.
+        """Opens and returns the mask image as a numpy array.
 
         Args:
+        ----
             idx (int): Index of the mask to open.
 
         Returns:
+        -------
             np.ndarray: Grayscale mask image.
+
         """
         image_name = self.image_filenames[idx]
         return np.array(Image.open(self.mask_dir / f"{image_name}_mask.{self.extension}"))
 
-    def display_data(self, list_indices: List[int]) -> None:
-        """
-        Displays pre- and post-disaster images alongside the corresponding mask.
+    def display_data(self, list_indices: list[int]) -> None:
+        """Displays pre- and post-disaster images alongside the corresponding mask.
 
         Args:
-            list_indices (List[int]): List of sample indices to display.
+        ----
+            list_indices (list[int]): List of sample indices to display.
+
         """
         num_samples = len(list_indices)
 

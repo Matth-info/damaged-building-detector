@@ -1,34 +1,40 @@
 # Dataset folder keep track of the custom pytorch dataset that have been used to load, preprocess data according to the source dataset and the model specificity
-from pathlib import Path
-from typing import List, Optional
+from __future__ import annotations
 
-import albumentations as A
+from pathlib import Path
+from typing import Optional
+
+import albumentations as alb
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import torch
 from PIL import Image
 
-from .base import Cloud_Dataset
+from .base import CloudDataset
 
-__all__ = ["prepare_cloud_segmentation_data"]
+_VISIBLE_BANDS = ["B04", "B03", "B02"]
 
 
-class Cloud_DrivenData_Dataset(Cloud_Dataset):
+class CloudDrivenDataDataset(CloudDataset):
+    """Custom PyTorch dataset for loading and preprocessing satellite cloud segmentation data from the DrivenData Cloud Segmentation Challenge."""
+
     def __init__(
         self,
         x_paths: pd.DataFrame,
-        bands: List[str] = ["B04", "B03", "B02"],
-        y_paths: Optional[pd.DataFrame] = None,
-        transform: Optional[A.Compose] = None,
-        **kwargs,
-    ):
-        """
+        bands: list[str] | None = None,
+        y_paths: pd.DataFrame | None = None,
+        transform: alb.Compose | None = None,
+        **kwargs: object,
+    ) -> None:
+        """Initialize CloudDriven Dataset.
+
         Args:
             x_paths (pd.DataFrame): DataFrame containing file paths to the input image channels.
-            bands (List[str]): List of band names to load.
-            y_paths (Optional[pd.DataFrame]): DataFrame containing file paths for corresponding labels (masks).
-            transform (Optional[A.Compose]): Albumentations transformations to apply to images and masks.
+            bands (list[str]): List of band names to load.
+            y_paths (pd.DataFrame | None): DataFrame containing file paths for corresponding labels (masks).
+            transform (alb.Compose | None): Albumentations transformations to apply to images and masks.
+            kwargs : keep unexpected parameters
 
         Note : The expected bands are B02 : Blue , B03 : Green, B04 : Red, B08 : nir (optional)
         RGB format is [B04, B03, B02]
@@ -37,48 +43,53 @@ class Cloud_DrivenData_Dataset(Cloud_Dataset):
         super().__init__()
         self.data = x_paths
         self.label = y_paths
-        self.bands = bands
+        self.bands = _VISIBLE_BANDS if not bands else bands
         self.transform = transform
 
     def __len__(self) -> int:
-        """
-        Returns the number of samples in the dataset.
-        """
+        """Return the number of samples in the dataset."""
         return len(self.data)
 
     def load_channel(self, filepath: str) -> np.ndarray:
-        """
-        Loads a single image channel from the provided file path.
+        """Load a single image channel from the provided file path.
 
         Args:
+        ----
             filepath (str): Path to the image file.
 
         Returns:
+        -------
             np.ndarray: Loaded image as a NumPy array.
+
         """
         return np.array(Image.open(filepath))
 
     def open_mask(self, idx: int) -> np.ndarray:
-        """
-        Loads the mask from the provided file path.
+        """Load the mask from the provided file path.
 
         Args:
+        ----
             idx (int): Index in self.label list.
 
         Returns:
+        -------
             np.ndarray: Mask as a NumPy array (should already be in 0-1 range).
+
         """
         filepath = self.label.loc[idx]["label_path"]
         return self.load_channel(filepath)
 
     def open_as_array(self, idx: int) -> np.ndarray:
-        """
-        Loads the image channels for the sample at the given index and stacks them into a single array.
+        """Load the image channels for the sample at the given index and stacks them into a single array.
 
         Args:
+        ----
             idx (int): Index of the sample in the DataFrame.
+
         Returns:
+        -------
             np.ndarray: Stacked image channels as a NumPy array, normalized to [0, 1].
+
         """
         # Load the channels based on the band names and stack them
         band_arrs = [self.load_channel(self.data.loc[idx][f"{band}_path"]) for band in self.bands]
@@ -88,8 +99,8 @@ class Cloud_DrivenData_Dataset(Cloud_Dataset):
         x_arr = (x_arr - x_arr.min()) / (x_arr.max() - x_arr.min())
         return x_arr
 
-    def true_color_img(self, idx):
-        visible_bands = ["B04", "B03", "B02"]  # RGB
+    def _true_color_img(self, idx):
+        visible_bands = _VISIBLE_BANDS  # RGB
         band_arrs = [
             self.load_channel(self.data.loc[idx][f"{band}_path"]) for band in visible_bands
         ]
@@ -99,14 +110,16 @@ class Cloud_DrivenData_Dataset(Cloud_Dataset):
         return x_arr
 
     def __getitem__(self, idx: int) -> torch.Tensor:
-        """
-        Retrieves a single sample (image and label) from the dataset, applying transformations if specified.
+        """Retrieve a single sample (image and label) from the dataset, applying transformations if specified.
 
         Args:
+        ----
             idx (int): Index of the sample in the dataset.
 
         Returns:
-            tuple: A tuple containing the image tensor and the mask tensor (if labels exist).
+        -------
+            tuple: alb tuple containing the image tensor and the mask tensor (if labels exist).
+
         """
         # Load image channels and optional mask
         x = self.open_as_array(idx).astype(np.float32)  # numpy format (H,W,C)
@@ -134,20 +147,22 @@ class Cloud_DrivenData_Dataset(Cloud_Dataset):
         return {"image": x, "mask": y} if y is not None else x
 
     def __repr__(self) -> str:
-        """
-        String representation of the dataset class, showing the number of samples.
+        """Representation of the dataset class, showing the number of samples.
 
         Returns:
+        -------
             str: Dataset class representation.
+
         """
         return f"Dataset class with {len(self)} samples"
 
-    def display_data(self, list_indices: List[int]) -> None:
-        """
-        Displays a grid of images and their corresponding masks for a given list of sample indices.
+    def display_data(self, list_indices: list[int]) -> None:
+        """Display a grid of images and their corresponding masks for a given list of sample indices.
 
         Args:
-            list_indices (List[int]): List of indices to display.
+        ----
+            list_indices (list[int]): List of indices to display.
+
         """
         num_samples = len(list_indices)
         rows = num_samples  # Calculate the number of rows for the subplot grid
@@ -160,7 +175,7 @@ class Cloud_DrivenData_Dataset(Cloud_Dataset):
             row = i
 
             # Load image and mask data
-            x = self.true_color_img(idx)
+            x = self._true_color_img(idx)
             mask = self.open_mask(idx) if self.label is not None else None
 
             # Display image
@@ -189,19 +204,20 @@ class Cloud_DrivenData_Dataset(Cloud_Dataset):
 def add_paths(
     df: pd.DataFrame,
     feature_dir: Path,
-    label_dir: Path = None,
-    bands: list = ["B04", "B03", "B02"],
+    label_dir: Path | None = None,
+    bands: list[str] | None = None,
 ) -> pd.DataFrame:
-    """
-    Adds file paths for each band and label to the dataframe based on chip_id.
+    """Add file paths for each band and label to the dataframe based on chip_id.
 
     Args:
+    ----
         df (pd.DataFrame): DataFrame containing chip_id (e.g., image identifiers).
         feature_dir (Path): Directory where feature TIF images are stored.
         label_dir (Path, optional): Directory where label TIF images are stored. Defaults to None.
         bands (list): List of band names (e.g., ["B02", "B03", ...]). Defaults to BANDS.
 
     Returns:
+    -------
         pd.DataFrame: Updated dataframe with new columns for each band path and label path.
 
     Adds the following columns to the dataframe:
@@ -213,7 +229,9 @@ def add_paths(
         - "accessible" boolean column indicating if all image channels and label file exist.
 
     Ex: train_meta = add_paths(train_meta, TRAIN_FEATURES, TRAIN_LABELS)
+
     """
+    bands = _VISIBLE_BANDS if not bands else bands
     # Ensure feature_dir and label_dir are Path objects
     feature_dir = Path(feature_dir)
     if label_dir is not None:
@@ -248,16 +266,16 @@ def prepare_cloud_segmentation_data(
     train_share: float = 0.8,
     seed: int = 42,
 ):
-    """
-    Data processing function to create training and validation datasets
-    from the DrivenData Cloud Segmentation Challenge dataset.
+    """Data processing function to create training and validation datasets from the DrivenData Cloud Segmentation Challenge dataset.
 
     Args:
+    ----
         folder_path (str): Path to the main dataset directory. Defaults to "../data/Cloud_DrivenData/final/public".
         train_share (float): Proportion of data to use for training (0 < train_share < 1). Defaults to 0.8.
         seed (int): Define the seed
 
     Returns:
+    -------
         tuple: Four dataframes - train_x, train_y, val_x, val_y
                - train_x: Training features dataframe
                - train_y: Training labels dataframe
@@ -272,21 +290,21 @@ def prepare_cloud_segmentation_data(
     random.seed(seed)
 
     # Set up paths and constants
-    DATA_DIR = Path(folder_path).resolve()
-    TRAIN_FEATURES = DATA_DIR / "train_features"
-    TRAIN_LABELS = DATA_DIR / "train_labels"
-    TRAIN_META_FILE = DATA_DIR / "train_metadata.csv"
-    BANDS = ["B04", "B03", "B02"]  # Bands to use; B08 can be added if needed
+    data_dir = Path(folder_path).resolve()
+    train_features = data_dir / "train_features"
+    train_labels = data_dir / "train_labels"
+    train_meta_files = data_dir / "train_metadata.csv"
+    bands = _VISIBLE_BANDS  # Bands to use; B08 can be added if needed
 
     # Ensure required directories and files exist
-    assert TRAIN_FEATURES.exists(), f"Train features directory not found: {TRAIN_FEATURES}"
-    assert TRAIN_META_FILE.exists(), f"Metadata file not found: {TRAIN_META_FILE}"
+    assert train_features.exists(), f"Train features directory not found: {train_features}"
+    assert train_meta_files.exists(), f"Metadata file not found: {train_meta_files}"
 
     # Load metadata
-    train_meta = pd.read_csv(TRAIN_META_FILE)
+    train_meta = pd.read_csv(train_meta_files)
 
     # Add paths for feature and label files
-    train_meta = add_paths(train_meta, TRAIN_FEATURES, TRAIN_LABELS)
+    train_meta = add_paths(train_meta, train_features, train_labels)
 
     # Compute validation share
     val_share = 1 - train_share
@@ -301,7 +319,7 @@ def prepare_cloud_segmentation_data(
     train = train_meta[~val_mask].copy().reset_index(drop=True)
 
     # Separate features and labels
-    feature_cols = ["chip_id"] + [f"{band}_path" for band in BANDS]
+    feature_cols = ["chip_id"] + [f"{band}_path" for band in bands]
     train_x = train[feature_cols].copy()  # Training features
     train_y = train[["chip_id", "label_path"]].copy()  # Training labels
     val_x = val[feature_cols].copy()  # Validation features

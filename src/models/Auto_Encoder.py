@@ -1,19 +1,26 @@
 import torch
-import torch.nn as nn
+from torch import nn
 
 
 class AutoEncoder(nn.Module):
-    def __init__(
+    """Simple Convolutional-based AutoEncoder.
+
+    Args:
+        num_input_channel (int): Number of input channels.
+        base_channel_size (int): Number of hidden channels.
+        kwargs: Other key-words arguments.
+    """
+
+    def __init__(  # noqa: D107
         self,
-        num_input_channel=3,
-        base_channel_size=32,  # Reduced the base channel size to reduce parameters
-        act_fn=nn.ReLU(inplace=True),
+        num_input_channel: int = 3,
+        base_channel_size: int = 32,  # Reduced the base channel size to reduce parameters
         **kwargs,
-    ):
+    ) -> None:
         super().__init__()
 
         self.num_input_channel = num_input_channel
-        self.act_fn = act_fn
+        self.act_fn = nn.ReLU(inplace=True)
         c_hid = base_channel_size  # Base channel size (e.g., 32 for reduced size)
 
         # Encoding block
@@ -42,22 +49,24 @@ class AutoEncoder(nn.Module):
             nn.Sigmoid(),  # Normalize output to [0, 1]
         )
 
-    def forward(self, x):
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """Forward pass."""
         x = self.features(x)
-        x = self.upsample(x)
-        return x
+        return self.upsample(x)
 
     @torch.no_grad()
-    def predict(self, x):
+    def predict(self, x: torch.Tensor):
+        """Predict pass."""
         x = self.features(x)
-        x = self.upsample(x)
-        return x
+        return self.upsample(x)
 
-    def save(self, file_path):
+    def save(self, file_path: str):
+        """Saving model."""
         torch.save(self.state_dict(), file_path)
         print(f"{self.__class__} Model saved to {file_path}")
 
-    def load(self, file_path):
+    def load(self, file_path: str):
+        """Load model checkpoint."""
         # Load the state_dict into the model
         self.load_state_dict(torch.load(file_path, weights_only=True))
         print(f"{self.__class__} Model loaded from {file_path}")

@@ -9,6 +9,8 @@ from .layers import MixingBlock, MixingMaskAttentionBlock, PixelwiseLinear, UpMa
 
 
 class TinyCD(Module):
+    """TinyCD model."""
+
     def __init__(
         self,
         bkbn_name="efficientnet_b4",
@@ -16,7 +18,7 @@ class TinyCD(Module):
         output_layer_bkbn="3",
         out_channels=2,
         freeze_backbone=False,
-        **kwargs
+        **kwargs,
     ):
         super().__init__()
 
@@ -30,7 +32,7 @@ class TinyCD(Module):
                 MixingMaskAttentionBlock(48, 24, [24, 12, 6], [12, 6, 1]),
                 MixingMaskAttentionBlock(64, 32, [32, 16, 8], [16, 8, 1]),
                 MixingBlock(112, 56),
-            ]
+            ],
         )
 
         # Initialize Upsampling blocks:
@@ -39,7 +41,7 @@ class TinyCD(Module):
                 UpMask(2, 56, 64),
                 UpMask(2, 64, 64),
                 UpMask(2, 64, 32),
-            ]
+            ],
         )
 
         # Final classification layer:
@@ -54,7 +56,7 @@ class TinyCD(Module):
     def predict(self, x1, x2):
         self.forward(x1, x2)
 
-    def _encode(self, x1, x2) -> List[Tensor]:
+    def _encode(self, x1, x2) -> list[Tensor]:
         features = [self._first_mix(x1, x2)]
         for num, layer in enumerate(self._backbone):
             x1, x2 = layer(x1), layer(x2)
@@ -72,7 +74,7 @@ class TinyCD(Module):
 def _get_backbone(bkbn_name, pretrained, output_layer_bkbn, freeze_backbone) -> ModuleList:
     # The whole model:
     entire_model = getattr(torchvision.models, bkbn_name)(
-        weights="DEFAULT" if pretrained else None
+        weights="DEFAULT" if pretrained else None,
     ).features
 
     # Slicing it:

@@ -7,10 +7,12 @@ import numpy as np
 import rasterio
 import torch
 
-from .base import Segmentation_Dataset
+from .base import SegmentationDataset
 
 
-class OpenCities_Building_Dataset(Segmentation_Dataset):
+class OpenCities_Building_Dataset(SegmentationDataset):
+    """Dataset class for OpenCities building segmentation tasks."""
+
     MEAN = None
     STD = None
 
@@ -18,44 +20,49 @@ class OpenCities_Building_Dataset(Segmentation_Dataset):
         self,
         images_dir: str,
         masks_dir: str,
-        transform: Optional[A.Compose] = None,
-        filter_invalid_image=True,
+        transform: A.Compose | None = None,
+        *,
+        filter_invalid_image: bool = True,
+        n_classes: int = 2,
         **kwargs,
-    ):
-        """
-        Initializes the OpenCities dataset with images and corresponding masks.
+    ) -> None:
+        """Initialize the OpenCities dataset with images and corresponding masks.
 
         Args:
             images_dir (str): Directory containing the image files.
             masks_dir (str): Directory containing the mask files.
-            transform (Optional[A.Compose]): Albumentations transformation pipeline.
+            transform (A.Compose | None, optional): Albumentations transformation pipeline to apply to images and masks.
+            filter_invalid_image (bool, optional): Whether to remove invalid/corrupted image-mask pairs. Defaults to True.
+            n_classes (int, optional): Number of classes for segmentation. Defaults to 2.
+            **kwargs: Additional keyword arguments passed to the base class.
 
         Checklist:
             dataset creation : Done
             dataset iteration : Done
             data augmentation with albumentation : Done
             display data : Done
+
         """
+        super().__init__(transform=transform, n_classes=n_classes)
         self.images_dir = Path(images_dir)
         self.masks_dir = Path(masks_dir)
-        self.transform = transform
         self.filenames = [Path(x) for x in self.images_dir.glob("*.tif")]
         self.nb_input_channel = 3
 
         if filter_invalid_image:
-            self.remove_invalid_sample()
+            self._remove_invalid_sample()
 
     def __len__(self):
         """Returns the total number of samples in the dataset."""
         return len(self.filenames)
 
-    def extract_filename(self, filepath: Path) -> str:
-        # Split the string at '.tif' and return the part before it
+    def _extract_filename(self, filepath: Path) -> str:
+        """Split the string at '.tif' and return the part before it."""
         return filepath.stem
 
-    def remove_invalid_sample(self):
-        """
-        Removes invalid samples (image and mask) from the dataset.
+    def _remove_invalid_sample(self) -> None:
+        """Remove invalid samples (image and mask) from the dataset.
+
         Some images might be corrupted and cannot be opened by rasterio.
         """
         import logging
@@ -65,9 +72,9 @@ class OpenCities_Building_Dataset(Segmentation_Dataset):
         valid_filenames = []  # Store valid filenames
 
         for image_path in tqdm(self.filenames, desc="Removing Invalid Samples"):
-            filename = self.extract_filename(image_path)
+            filename = self._extract_filename(image_path)
             filename_mask = f"{filename}_mask.tif"
-            mask_path = os.path.join(self.masks_dir, filename_mask)
+            mask_path = Path(self.masks_dir) / filename_mask
 
             # Try to load the image and the corresponding mask
             try:
@@ -78,20 +85,20 @@ class OpenCities_Building_Dataset(Segmentation_Dataset):
             except (rasterio.errors.RasterioIOError, FileNotFoundError) as e:
                 # Log the error and skip this sample
                 logging.warning(
-                    f"Error opening image or mask for {image_path}. Skipping this file."
+                    f"Error opening image or mask for {image_path}. Skipping this file.",
                 )
 
         # Update the dataset with only valid filenames
         self.filenames = valid_filenames
 
-    def __getitem__(self, idx: int):
+    def __getitem__(self, idx: int) -> dict:
         """Fetches and returns a single dataset sample with optional transformations."""
         image_path = self.filenames[idx]
-        filename = self.extract_filename(
-            image_path
+        filename = self._extract_filename(
+            image_path,
         )  # Convert Path to string before extracting filename
         filename_mask = f"{filename}_mask.tif"
-        mask_path = os.path.join(self.masks_dir, filename_mask)
+        mask_path = Path(self.masks_dir) / filename_mask
         image = self.read_image(image_path)
         mask = self.read_mask(mask_path)
 
@@ -126,7 +133,8 @@ class OpenCities_Building_Dataset(Segmentation_Dataset):
         with rasterio.open(path) as f:
             return f.profile
 
-    def display_data(self, list_indices: List[int]) -> None:
+    def display_data(self, list_indices: list[int]) -> None:
+        """Display some samples."""
         import matplotlib.pyplot as plt
 
         num_samples = len(list_indices)

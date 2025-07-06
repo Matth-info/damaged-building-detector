@@ -8,9 +8,9 @@ import torch.nn.functional as F
 
 __all__ = [
     "focal_loss_with_logits",
-    "softmax_focal_loss_with_logits",
-    "soft_jaccard_score",
     "soft_dice_score",
+    "soft_jaccard_score",
+    "softmax_focal_loss_with_logits",
     "wing_loss",
 ]
 
@@ -37,16 +37,17 @@ def focal_loss_with_logits(
     output: torch.Tensor,
     target: torch.Tensor,
     gamma: float = 2.0,
-    alpha: Optional[float] = 0.25,
+    alpha: float | None = 0.25,
     reduction: str = "mean",
     normalized: bool = False,
-    reduced_threshold: Optional[float] = None,
+    reduced_threshold: float | None = None,
     eps: float = 1e-6,
 ) -> torch.Tensor:
     """Compute binary focal loss between target and output logits.
     See :class:`~pytorch_toolbelt.losses.FocalLoss` for details.
 
     Args:
+    ----
         output: Tensor of arbitrary shape (predictions of the model)
         target: Tensor of the same shape as input
         gamma: Focal loss power factor
@@ -63,7 +64,9 @@ def focal_loss_with_logits(
         reduced_threshold (float, optional): Compute reduced focal loss (https://arxiv.org/abs/1903.01347).
 
     References:
+    ----------
         https://github.com/open-mmlab/mmdetection/blob/master/mmdet/core/loss/losses.py
+
     """
     target = target.type(output.type())
 
@@ -102,13 +105,14 @@ def softmax_focal_loss_with_logits(
     gamma: float = 2.0,
     reduction="mean",
     normalized=False,
-    reduced_threshold: Optional[float] = None,
+    reduced_threshold: float | None = None,
     eps: float = 1e-6,
 ) -> torch.Tensor:
     """Softmax version of focal loss between target and output logits.
     See :class:`~pytorch_toolbelt.losses.FocalLoss` for details.
 
     Args:
+    ----
         output: Tensor of shape [B, C, *] (Similar to nn.CrossEntropyLoss)
         target: Tensor of shape [B, *] (Similar to nn.CrossEntropyLoss)
         reduction (string, optional): Specifies the reduction to apply to the output:
@@ -120,6 +124,7 @@ def softmax_focal_loss_with_logits(
             'batchwise_mean' computes mean loss per sample in batch. Default: 'mean'
         normalized (bool): Compute normalized focal loss (https://arxiv.org/pdf/1909.07829.pdf).
         reduced_threshold (float, optional): Compute reduced focal loss (https://arxiv.org/abs/1903.01347).
+
     """
     log_softmax = F.log_softmax(output, dim=1)
 
@@ -184,7 +189,8 @@ def soft_tversky_score(
 ) -> torch.Tensor:
     """Tversky loss
 
-    References:
+    References
+    ----------
         https://arxiv.org/pdf/2302.05666
         https://arxiv.org/pdf/2303.16296
 
@@ -211,11 +217,16 @@ def soft_tversky_score(
 
 
 def wing_loss(
-    output: torch.Tensor, target: torch.Tensor, width=5, curvature=0.5, reduction="mean"
+    output: torch.Tensor,
+    target: torch.Tensor,
+    width=5,
+    curvature=0.5,
+    reduction="mean",
 ):
     """Wing loss
 
-    References:
+    References
+    ----------
         https://arxiv.org/pdf/1711.06753.pdf
 
     """
@@ -250,9 +261,11 @@ def label_smoothed_nll_loss(
     """NLL loss with label smoothing
 
     References:
+    ----------
         https://github.com/pytorch/fairseq/blob/master/fairseq/criterions/label_smoothed_cross_entropy.py
 
     Args:
+    ----
         lprobs (torch.Tensor): Log-probabilities of predictions (e.g after log_softmax)
 
     """

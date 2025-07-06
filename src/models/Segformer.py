@@ -2,8 +2,8 @@ from typing import Dict, Optional
 
 import numpy as np
 import torch
-import torch.nn as nn
 import torch.nn.functional as F
+from torch import nn
 from transformers import (
     AutoConfig,
     AutoImageProcessor,
@@ -11,26 +11,32 @@ from transformers import (
 )
 
 
-def extract_dimension(image):
-    if isinstance(image, torch.Tensor) or isinstance(image, np.ndarray):
+def _extract_dimension(image):
+    if isinstance(image, (np.ndarray, torch.Tensor)):
         return image.shape[-2:]  # Returns (height, width)
-    else:
-        return (image.height, image.width)
+    return (image.height, image.width)
 
 
 class Segformer(nn.Module):
-    """
-    A Wrapper Torch module to load Semantic Segmentation models from HuggingFace Hub.
-    """
+    """A Wrapper Torch module to load Semantic Segmentation models from HuggingFace Hub."""
 
     def __init__(
         self,
         model_name: str = "nvidia/segformer-b1-finetuned-ade-512-512",
-        label2id: Optional[Dict[str, int]] = None,
+        label2id: dict[str, int | None] = None,
         num_labels: int = 2,
         freeze_encoder=True,
         **kwargs,
-    ):
+    ) -> None:
+        """Initialize Segformer model object.
+
+        Args:
+            model_name (str, optional): HuggingFace model name. Defaults to "nvidia/segformer-b1-finetuned-ade-512-512".
+            label2id (dict[str, int  |  None], optional): dictionary matching labels to ids. Defaults to None.
+            num_labels (int, optional): Number of classes. Defaults to 2.
+            freeze_encoder (bool, optional): Encoder Freezing. Defaults to True.
+            kwargs (Any): other key-words arguments.
+        """
         super().__init__()
 
         # Load configuration with label2id if provided, ensuring correct label alignment.
@@ -51,7 +57,10 @@ class Segformer(nn.Module):
 
         # Load image processor with appropriate options for rescaling and label reduction
         self.image_processor = AutoImageProcessor.from_pretrained(
-            model_name, do_reduce_labels=False, do_rescale=False, trust_remote_code=True
+            model_name,
+            do_reduce_labels=False,
+            do_rescale=False,
+            trust_remote_code=True,
         )
         self.freeze_encoder = freeze_encoder
         if self.freeze_encoder:
@@ -62,10 +71,9 @@ class Segformer(nn.Module):
             param.requires_grad = False
         print("Encoder weights have been frozen.")
 
-    def forward(self, image):
-        # Process input image to match model requirements
-
-        original_size = extract_dimension(image)
+    def forward(self, image) -> torch.Tensor:
+        """Process input image to match model requirements."""
+        original_size = _extract_dimension(image)
 
         inputs = self.image_processor(images=image, return_tensors="pt").to(image.device)
 
@@ -73,24 +81,28 @@ class Segformer(nn.Module):
         outputs = self.model(**inputs)
 
         logits = F.interpolate(
-            outputs.logits, size=original_size, mode="bilinear", align_corners=False
+            outputs.logits,
+            size=original_size,
+            mode="bilinear",
+            align_corners=False,
         )
 
         return logits
 
     @torch.no_grad()
     def predict(self, image):
-        """
-        Predicts the segmentation mask for a given input image.
+        """Predicts the segmentation mask for a given input image.
 
         Args:
+        ----
             image: Input image as a PIL.Image or torch.Tensor (H, W, C) in RGB format.
 
         Returns:
+        -------
             pred_seg: Predicted segmentation mask as a numpy array (same size than image).
-        """
 
-        original_size = extract_dimension(image)
+        """
+        original_size = _extract_dimension(image)
 
         inputs = self.image_processor(images=image, return_tensors="pt").to(image.device)
 
@@ -108,13 +120,14 @@ class Segformer(nn.Module):
         return torch.argmax(predicted_masks, dim=1).cpu().numpy()
 
     def save(self, path: str):
-        """
-        Save the model and configuration to a specified directory.
+        """Save the model and configuration to a specified directory.
 
         Args:
+        ----
             path: Path to the directory where the model will be saved.
 
         Example : Segformer.load(path="../models/Segformer_cloud_seg")
+
         """
         print(f"Saving model to {path}...")
         self.model.save_pretrained(path)
@@ -123,23 +136,30 @@ class Segformer(nn.Module):
 
     @classmethod
     def load(cls, path: str, freeze_encoder=True):
-        """
-        Load a saved model and configuration from a specified directory.
+        """Load a saved model and configuration from a specified directory.
 
         Args:
+        ----
             path: Path to the directory from which the model will be loaded.
             freeze_encoder: Whether to freeze the encoder weights of the model.
 
         Returns:
+        -------
             An instance of the `Segformer` class.
+
         """
         print(f"Loading model from {path}...")
         config = AutoConfig.from_pretrained(path, trust_remote_code=True, local_files_only=True)
         model = AutoModelForSemanticSegmentation.from_pretrained(
-            path, config=config, trust_remote_code=True, local_files_only=True
+            path,
+            config=config,
+            trust_remote_code=True,
+            local_files_only=True,
         )
         image_processor = AutoImageProcessor.from_pretrained(
-            path, trust_remote_code=True, local_files_only=True
+            path,
+            trust_remote_code=True,
+            local_files_only=True,
         )
 
         # Create an instance of the Segformer class

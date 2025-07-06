@@ -6,23 +6,24 @@ from .metric import Metric
 
 
 class IoU(Metric):
-    """
-    Computes the intersection over union (IoU) per class and corresponding mean (mIoU).
+    """Computes the intersection over union (IoU) per class and corresponding mean (mIoU).
 
     Intersection over union (IoU) is a common evaluation metric for semantic
     segmentation. It uses the confusion matrix to compute IoU per class:
 
         IoU = true_positive / (true_positive + false_positive + false_negative).
 
-    Keyword arguments:
+    Keyword Arguments:
+    -----------------
     - num_classes (int): Number of classes in the classification problem.
     - normalized (boolean, optional): Determines whether the confusion matrix is normalized.
       Default: False.
     - ignore_index (int or iterable, optional): Index of the classes to ignore when computing IoU.
       Can be an int, or any iterable of ints.
+
     """
 
-    def __init__(self, num_classes, normalized=False, ignore_index=None):
+    def __init__(self, num_classes, normalized=False, ignore_index=None) -> None:
         super().__init__()
         self.conf_metric = ConfusionMatrix(num_classes, normalized)
 
@@ -41,19 +42,20 @@ class IoU(Metric):
         self.conf_metric.reset()
 
     def add(self, predicted, target):
-        """
-        Adds the predicted and target pair to the IoU metric.
+        """Adds the predicted and target pair to the IoU metric.
 
         Args:
+        ----
         - predicted (Tensor): Can be an (N, K, H, W) tensor of predicted scores obtained from
                               the model for N examples and K classes, or (N, H, W) tensor of
                               integer values between 0 and K-1.
         - target (Tensor): Can be an (N, K, H, W) tensor of target scores for N examples and
                            K classes, or (N, H, W) tensor of integer values between 0 and K-1.
+
         """
         # Validate batch sizes
         assert predicted.size(0) == target.size(
-            0
+            0,
         ), "Number of targets and predicted outputs do not match"
 
         # Validate dimensions
@@ -70,15 +72,16 @@ class IoU(Metric):
         self.conf_metric.add(predicted, target)
 
     def value(self):
-        """
-        Computes the IoU and mean IoU.
+        """Computes the IoU and mean IoU.
 
         The mean computation ignores NaN elements of the IoU array.
 
-        Returns:
+        Returns
+        -------
             Tuple: (IoU, mIoU). The first output is the per-class IoU,
                    a numpy.ndarray with K elements for K classes.
                    The second output is the mean IoU (mIoU).
+
         """
         conf_matrix = self.conf_metric.value()
 

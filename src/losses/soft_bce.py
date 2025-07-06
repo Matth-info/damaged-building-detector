@@ -18,15 +18,16 @@ class SoftBCEWithLogitsLoss(nn.Module):
 
     def __init__(
         self,
-        weight: Optional[torch.Tensor] = None,
-        ignore_index: Optional[int] = -100,
+        weight: torch.Tensor | None = None,
+        ignore_index: int | None = -100,
         reduction: str = "mean",
-        smooth_factor: Optional[float] = None,
-        pos_weight: Optional[torch.Tensor] = None,
+        smooth_factor: float | None = None,
+        pos_weight: torch.Tensor | None = None,
     ):
         """Drop-in replacement for torch.nn.BCEWithLogitsLoss with few additions: ignore_index and label_smoothing
 
         Args:
+        ----
             ignore_index: Specifies a target value that is ignored and does not contribute to the input gradient.
             smooth_factor: Factor to smooth target (e.g. if smooth_factor=0.1 then [1, 0, 1] -> [0.9, 0.1, 0.9])
 
@@ -46,15 +47,16 @@ class SoftBCEWithLogitsLoss(nn.Module):
         self.register_buffer("pos_weight", pos_weight)
 
     def forward(self, y_pred: torch.Tensor, y_true: torch.Tensor) -> torch.Tensor:
-        """
-        Args:
+        """Args:
+        ----
             y_pred: torch.Tensor of shape (N, C, H, W)
             y_true: torch.Tensor of shape (N, H, W)  or (N, 1, H, W)
 
-        Returns:
+        Returns
+        -------
             loss: torch.Tensor
-        """
 
+        """
         if self.smooth_factor is not None:
             soft_targets = (1 - y_true) * self.smooth_factor + y_true * (1 - self.smooth_factor)
         else:

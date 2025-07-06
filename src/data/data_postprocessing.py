@@ -1,10 +1,12 @@
+from __future__ import annotations
+
 import logging
 import os
 import tempfile
 import traceback
 from concurrent.futures import ProcessPoolExecutor
 from pathlib import Path, Tuple
-from typing import Dict
+from typing import TYPE_CHECKING, Dict
 
 import geopandas as gpd
 import mercantile
@@ -13,37 +15,47 @@ import pandas as pd
 from rasterio.features import shapes
 from scipy import ndimage
 from shapely.geometry import shape
-from shapely.geometry.polygon import Polygon
 from tqdm import tqdm
 
 from src.data.utils import extract_coor_from_tiff_image, read_tiff_rasterio
 from src.utils.visualization import COLOR_DICT, apply_inverse_color_map
 
+if TYPE_CHECKING:
+    import shapely
+    from shapely.geometry.polygon import Polygon
+
 logging.basicConfig(level=logging.ERROR, format="%(asctime)s - %(levelname)s - %(message)s")
-logger = logging.getLogger(__name__)
-logger.setLevel(logging.ERROR)
+_logger = logging.getLogger(__name__)
+_logger.setLevel(logging.ERROR)
 
 # Utils function to transform predicted segmentation mask into geo-referenced blob
 # Use Vector Data instead of Raster Data improve imformation display.
 
 
-def extract_overall_vector_data(file_path: str, mode: str, min_area: int = 80):
-    """
-    Extract georeferenced polygons from a semantic segmentation prediction mask (all classes merged)
+def extract_overall_vector_data(
+    file_path: str, mode: str, min_area: int = 80
+) -> list[shapely.geometry.Polygon]:
+    """Extract georeferenced polygons from a semantic segmentation prediction mask (all classes merged).
 
     Args:
+    ----
         file_path (str): Path to the RGB mask image.
         mode (str): Mode name corresponding to COLOR_DICT.
         min_area (int): Minimum polygon area (pixels) to keep.
 
     Returns:
-        List[shapely.geometry.Polygon]: Extracted polygons.
+    -------
+        list[shapely.geometry.Polygon]: Extracted polygons.
+
     """
     color_dict = COLOR_DICT[mode]
 
     # Load RGB mask
     color_mask, _, transform = read_tiff_rasterio(
-        file_path, bands=[1, 2, 3], with_profile=False, with_transform=True
+        file_path,
+        bands=[1, 2, 3],
+        with_profile=False,
+        with_transform=True,
     )
 
     # Convert colorized mask to 2D label mask
@@ -67,22 +79,29 @@ def extract_overall_vector_data(file_path: str, mode: str, min_area: int = 80):
     return polygons
 
 
-def extract_overall_vector_data_by_class(file_path: str, mode: str, min_area: int = 80):
-    """
-    Extract georeferenced polygons per class from a semantic segmentation prediction mask.
+def extract_overall_vector_data_by_class(
+    file_path: str, mode: str, min_area: int = 80
+) -> list[tuple[Polygon, int]]:
+    """Extract georeferenced polygons per class from a semantic segmentation prediction mask.
 
     Args:
+    ----
         file_path (str): Path to the RGB mask image.
         mode (str): Mode name corresponding to COLOR_DICT.
         min_area (int): Minimum polygon area (pixels) to keep.
 
     Returns:
-        List[Tuple[Polygon, int]]: List of polygons with class labels.
+    -------
+        list[tuple[Polygon, int]]: List of polygons with class labels.
+
     """
     color_dict = COLOR_DICT[mode]
 
     color_mask, _, transform = read_tiff_rasterio(
-        file_path, bands=[1, 2, 3], with_profile=False, with_transform=True
+        file_path,
+        bands=[1, 2, 3],
+        with_profile=False,
+        with_transform=True,
     )
     mask = apply_inverse_color_map(color_mask, color_dict)
 
@@ -105,17 +124,21 @@ def extract_overall_vector_data_by_class(file_path: str, mode: str, min_area: in
     return polygons_by_class
 
 
-def extract_vector_data_by_class(file_path: str, mode: str, min_area: int = 80):
-    """
-    Match general polygons to their most overlapping class-specific polygons.
+def extract_vector_data_by_class(
+    file_path: str, mode: str, min_area: int = 80
+) -> list[tuple[Polygon, int]]:
+    """Match general polygons to their most overlapping class-specific polygons.
 
     Args:
+    ----
         file_path (str): Path to the RGB mask.
         mode (str): COLOR_DICT key for class colors.
         min_area (int): Minimum polygon area to keep.
 
     Returns:
-        List[Tuple[Polygon, int]]: Polygons with associated class.
+    -------
+        list[tuple[Polygon, int]]: Polygons with associated class.
+
     """
     polygons = extract_overall_vector_data(file_path, mode, min_area)
     polygons_by_class = extract_overall_vector_data_by_class(file_path, mode, min_area)
@@ -134,10 +157,9 @@ def extract_vector_data_by_class(file_path: str, mode: str, min_area: int = 80):
 
 
 # Parallelize Implementation
-def _process_single_mask(file_path: str, mode: str, min_area: int) -> Dict[str, list]:
-    """
-    Extract polygons from one mask and save to temporary GeoPackage.
-    """
+def _process_single_mask(file_path: str, mode: str, min_area: int) -> dict[str, list]:
+    """Extract polygons from one mask and save to temporary GeoPackage."""
+    output = None
     try:
         polygons_with_class = extract_vector_data_by_class(file_path, mode, min_area)
         filename = Path(file_path).name
@@ -149,11 +171,13 @@ def _process_single_mask(file_path: str, mode: str, min_area: int) -> Dict[str, 
         classes = [cls for _, cls in polygons_with_class]
         source_filename = [filename for _ in range(len(polygons_with_class))]
 
-        return {"class": classes, "geometry": polygons, "source": source_filename}
+        output = {"class": classes, "geometry": polygons, "source": source_filename}
     except Exception as e:
-        logging.info(f"❌ Error processing {file_path}: {e}")
+        logging.exception("❌ Error processing %s", file_path)
         traceback.logging.info_exc()
         return None
+    else:
+        return output
 
 
 def process_masks_parallel(
@@ -164,11 +188,11 @@ def process_masks_parallel(
     file_suffix: str = ".tif",
     min_area: int = 80,
     num_workers: int = 8,
-):
-    """
-    Parallel batch processor to convert all masks in a folder to one GeoPackage layer. (Parallel Execution)
+) -> None:
+    """Parallel batch processor to convert all masks in a folder to one GeoPackage layer. (Parallel Execution).
 
     Args:
+    ----
         folder_path (str): Path to the folder containing masks.
         mode (str): Mode name corresponding to COLOR_DICT.
         output_path (str): Path to save the merged GeoPackage.
@@ -176,21 +200,23 @@ def process_masks_parallel(
         file_suffix (str): File suffix to filter files in the folder.
         min_area (int): Minimum polygon area (pixels) to keep.
         num_workers (int): Number of parallel workers.
-    """
 
+    """
     all_files = sorted(
-        [os.path.join(folder_path, f) for f in os.listdir(folder_path) if f.endswith(file_suffix)]
+        [Path(folder_path) / f for f in os.listdir(folder_path) if f.endswith(file_suffix)],
     )
 
     if not all_files:
         logging.info("⚠️ No matching .tif files found.")
-        return None
-    else:
-        _, profile, _ = read_tiff_rasterio(all_files[0], with_profile=True)
-        crs = profile["crs"]
-        logging.info(
-            f"🚀 Processing georeferenced {len(all_files)} masks in parallel (CRS : {crs}) over {num_workers} workers ..."
-        )
+        return
+    _, profile, _ = read_tiff_rasterio(all_files[0], with_profile=True)
+    crs = profile["crs"]
+    logging.info(
+        "🚀 Processing georeferenced %d masks in parallel (CRS : %s) over %d workers ...",
+        len(all_files),
+        crs,
+        num_workers,
+    )
 
     with ProcessPoolExecutor(max_workers=num_workers) as executor:
         futures = [
@@ -205,26 +231,33 @@ def process_masks_parallel(
                 temp_outputs.append(result)
 
         # Merge all temp GPKG files
-        logging.info(f"📦 Merging {len(temp_outputs)} temporary files into final GeoPackage...")
+        logging.info("📦 Merging %d temporary files into final GeoPackage...", len(temp_outputs))
         temp_gdf = pd.concat([gpd.GeoDataFrame(data, crs=crs) for data in temp_outputs])
         merged_gdf = gpd.GeoDataFrame(temp_gdf).to_crs("EPSG:4326")
         merged_gdf["id"] = pd.Series(range(len(merged_gdf)))
         merged_gdf.to_file(
-            output_path, layer=layer_name, driver="GPKG", use_arrow=True, index=False
+            output_path,
+            layer=layer_name,
+            driver="GPKG",
+            use_arrow=True,
+            index=False,
         )
-        logging.info(f"\n✅ Done: {len(merged_gdf)} polygons saved to {output_path}")
+        logging.info("\n✅ Done: %d polygons saved to %s", len(merged_gdf), output_path)
 
 
 # Match footlogging.info predictions to Microsoft Global footlogging.infos.
 # functions inspired by https://github.com/microsoft/GlobalMLBuildingFootlogging.infos/blob/main/examples/example_building_footlogging.infos.ipynb
-def find_quad_keys(base_image: str) -> Dict[str, list | Polygon]:
-    """Using mercantile package functions, find the tiles intersecting the area of interest (AOI)
+def find_quad_keys(base_image: str) -> dict[str, list | Polygon]:
+    """Use mercantile package functions, find the tiles intersecting the area of interest (AOI).
 
     Args:
+    ----
         base_image (str): _description_
 
     Returns:
+    -------
         _type_: _description_
+
     """
     if Path(base_image).ext == "tif":
         left, bottom, right, top = extract_coor_from_tiff_image(base_image)  # EPSG:4326
@@ -242,7 +275,7 @@ def find_quad_keys(base_image: str) -> Dict[str, list | Polygon]:
     for tile in list(mercantile.tiles(minx, miny, maxx, maxy, zooms=9)):
         quad_keys.add(mercantile.quadkey(tile))
     quad_keys = list(quad_keys)
-    logging.info(f"The input area spans {len(quad_keys)} tiles: {quad_keys}")
+    logging.info("The input area spans %d tiles.", len(quad_keys))
 
     return {"quad_keys": quad_keys, "aoi_shape": aoi_shape}
 
@@ -258,9 +291,23 @@ def dowload_footprints_aoi(
     output_filename: str = "building_footprints",
     output_format: str = "geojson",
     aoi_shape: Polygon = None,
-):
+) -> None:
+    """Download and merge building footprint data for a given area of interest (AOI) using quad keys.
+
+    Args:
+    ----
+        quad_keys (list[str]): List of quad keys covering the AOI.
+        output_filename (str, optional): Base filename for the output file. Defaults to "building_footprints".
+        output_format (str, optional): Output file format ("geojson" or "gpkg"). Defaults to "geojson".
+        aoi_shape (Polygon, optional): Shapely Polygon representing the AOI. Defaults to None.
+
+    Returns:
+    -------
+        None: The function saves the merged building footprints to disk.
+
+    """
     # downloaded Opensource dataset links to footprint files
-    df = pd.read_csv(
+    building_tile_df = pd.read_csv(
         "https://minedbuildings.z5.web.core.windows.net/global-buildings/dataset-links.csv",
         dtype=str,
     )  # features : Location	QuadKey	Url	Size UploadDat
@@ -273,7 +320,7 @@ def dowload_footprints_aoi(
         # Download the GeoJSON files for each tile that intersects the input geometry
         tmp_fns = []
         for quad_key in tqdm(quad_keys):
-            rows = df[df["QuadKey"] == quad_key]
+            rows = building_tile_df[building_tile_df["QuadKey"] == quad_key]
             if rows.shape[0] == 1:
                 url = rows.iloc[0]["Url"]
 
@@ -281,17 +328,19 @@ def dowload_footprints_aoi(
                 df2["geometry"] = df2["geometry"].apply(shape)
 
                 gdf = gpd.GeoDataFrame(df2, crs=4326)
-                fn = os.path.join(tmpdir, f"{quad_key}.{output_format}")
+                fn = Path(tmpdir) / f"{quad_key}.{output_format}"
                 tmp_fns.append(fn)
-                if not os.path.exists(fn):
+                if not Path.exists(fn):
                     gdf.to_file(fn, **option_saving)
             elif rows.shape[0] > 1:
-                raise ValueError(f"Multiple rows found for QuadKey: {quad_key}")
+                msg = f"Multiple rows found for QuadKey: {quad_key}"
+                raise ValueError(msg)
             else:
-                raise ValueError(f"QuadKey is not found in dataset: {quad_key}")
+                msg = f"QuadKey is not found in dataset: {quad_key}"
+                raise ValueError(msg)
 
         # Merge the GeoJSON files into a single file
-        for i, fn in enumerate(tmp_fns):
+        for _i, fn in enumerate(tmp_fns):
             gdf = gpd.read_file(fn)  # Read each file into a GeoDataFrame
             gdf = gdf[gdf.geometry.within(aoi_shape)]  # Filter geometries within the AOI
             gdf["id"] = range(idx, idx + len(gdf))  # Update 'id' based on idx
@@ -301,32 +350,37 @@ def dowload_footprints_aoi(
         combined_gdf = combined_gdf.to_crs("EPSG:4326")
         combined_gdf.to_file(f"{output_filename}.{output_format}", **option_saving)
         logging.info(
-            f"Footprint file has been successfully created and stored at {output_filename}.{output_format}"
+            "Footprint file has been successfully created and stored at %s.%s",
+            output_filename,
+            output_format,
         )
 
 
 def merge_predictions_with_footprints(
-    predictions_file: str, footprints_file: str, max_distance: int = 5, projected_crs: int = 3857
-):
-    """
-    Merge local damage predictions with Microsoft building footprints using nearest spatial join.
+    predictions_file: str,
+    footprints_file: str,
+    max_distance: int = 5,
+    projected_crs: int = 3857,
+) -> gpd.GeoDataFrame:
+    """Merge local damage predictions with Microsoft building footprints using nearest spatial join.
 
-    Parameters:
-    - predictions_file: str, path to the GeoJSON or shapefile with building damage predictions.
-    - footprints_file: str, path to the Microsoft building footprints.
-    - max_distance: float, maximum distance in meters to search for the nearest match (default: 5 meters).
-    - projected_crs: int, projected CRS to better handle local distance assessment (default: 3857 Mercator)
+    Args:
+        predictions_file (str): Path to the GeoJSON or shapefile with building damage predictions.
+        footprints_file (str): Path to the Microsoft building footprints.
+        max_distance (int, optional): Maximum distance in meters to search for the nearest match (default: 5 meters).
+        projected_crs (int, optional): Projected CRS to better handle local distance assessment (default: 3857 Mercator).
 
     Returns:
-    - GeoDataFrame with merged class and geometry, including area features.
+        GeoDataFrame: GeoDataFrame with merged class and geometry, including area features.
+
     """
     # Load and reproject to GPS system
     logging.info("Loading data...")
     predictions = gpd.read_file(predictions_file).to_crs(epsg=4326)
     footprints = gpd.read_file(footprints_file).to_crs(epsg=4326)
 
-    logging.info(f"Number of predictions: {len(predictions)}")
-    logging.info(f"Number of footprints: {len(footprints)}")
+    logging.info("Number of predictions: %d", len(predictions))
+    logging.info("Number of footprints: %d", len(footprints))
 
     # Project to EPSG:3857 for accurate spatial operations (meters)
     predictions = predictions.to_crs(epsg=projected_crs)
@@ -336,7 +390,11 @@ def merge_predictions_with_footprints(
     # Nearest match is useful in post-catastrophe settings where building geometry might not align exactly
     logging.info("Performing nearest spatial join...")
     merged_data = gpd.sjoin_nearest(
-        footprints, predictions, how="left", max_distance=max_distance, distance_col="distance"
+        footprints,
+        predictions,
+        how="left",
+        max_distance=max_distance,
+        distance_col="distance",
     )
 
     # Assign class = 0 if no prediction was found
@@ -355,5 +413,5 @@ def merge_predictions_with_footprints(
     # Reproject back to EPSG:4326 for mapping
     merged_data = merged_data.to_crs(epsg=4326)
 
-    logging.info(f"Number of merged footprints: {len(merged_data)}")
+    logging.info("Number of merged footprints: %d", len(merged_data))
     return merged_data

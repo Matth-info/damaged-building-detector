@@ -15,13 +15,14 @@ class SoftCrossEntropyLoss(nn.Module):
     def __init__(
         self,
         reduction: str = "mean",
-        smooth_factor: Optional[float] = None,
-        ignore_index: Optional[int] = -100,
+        smooth_factor: float | None = None,
+        ignore_index: int | None = -100,
         dim: int = 1,
     ):
         """Drop-in replacement for torch.nn.CrossEntropyLoss with label_smoothing
 
         Args:
+        ----
             smooth_factor: Factor to smooth target (e.g. if smooth_factor=0.1 then [1, 0, 0] -> [0.9, 0.05, 0.05])
 
         Shape
@@ -30,6 +31,7 @@ class SoftCrossEntropyLoss(nn.Module):
 
         Reference
             https://github.com/BloodAxe/pytorch-toolbelt
+
         """
         super().__init__()
         self.smooth_factor = smooth_factor

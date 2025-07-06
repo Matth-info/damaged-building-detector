@@ -1,8 +1,6 @@
-"""
-Lovasz-Softmax and Jaccard hinge loss in PyTorch
+"""Lovasz-Softmax and Jaccard hinge loss in PyTorch
 Maxim Berman 2018 ESAT-PSI KU Leuven (MIT License)
 """
-
 
 from typing import Optional
 
@@ -35,12 +33,11 @@ def _lovasz_grad(gt_sorted):
 
 
 def _lovasz_hinge(logits, labels, per_image=True, ignore=None):
-    """
-    Binary Lovasz hinge loss
-        logits: [B, H, W] Logits at each pixel (between -infinity and +infinity)
-        labels: [B, H, W] Tensor, binary ground truth masks (0 or 1)
-        per_image: compute the loss per image instead of per batch
-        ignore: void class id
+    """Binary Lovasz hinge loss
+    logits: [B, H, W] Logits at each pixel (between -infinity and +infinity)
+    labels: [B, H, W] Tensor, binary ground truth masks (0 or 1)
+    per_image: compute the loss per image instead of per batch
+    ignore: void class id
     """
     if per_image:
         loss = mean(
@@ -192,13 +189,14 @@ class LovaszLoss(_Loss):
         self,
         mode: str,
         per_image: bool = False,
-        ignore_index: Optional[int] = None,
+        ignore_index: int | None = None,
         from_logits: bool = True,
     ):
         """Lovasz loss for image segmentation task.
         It supports binary, multiclass and multilabel cases
 
         Args:
+        ----
             mode: Loss mode 'binary', 'multiclass' or 'multilabel'
             ignore_index: Label that indicates ignored pixels (does not contribute to loss)
             per_image: If True loss computed per each image and then averaged, else computed per whole batch
@@ -209,6 +207,7 @@ class LovaszLoss(_Loss):
 
         Reference
             https://github.com/BloodAxe/pytorch-toolbelt
+
         """
         assert mode in {BINARY_MODE, MULTILABEL_MODE, MULTICLASS_MODE}
         super().__init__()
@@ -217,15 +216,21 @@ class LovaszLoss(_Loss):
         self.ignore_index = ignore_index
         self.per_image = per_image
 
-    def forward(self, y_pred, y_true):
+    def forward(self, y_pred, y_true) -> torch.Tensor:
         if self.mode in {BINARY_MODE, MULTILABEL_MODE}:
             loss = _lovasz_hinge(
-                y_pred, y_true, per_image=self.per_image, ignore=self.ignore_index
+                y_pred,
+                y_true,
+                per_image=self.per_image,
+                ignore=self.ignore_index,
             )
         elif self.mode == MULTICLASS_MODE:
             y_pred = y_pred.softmax(dim=1)
             loss = _lovasz_softmax(
-                y_pred, y_true, per_image=self.per_image, ignore=self.ignore_index
+                y_pred,
+                y_true,
+                per_image=self.per_image,
+                ignore=self.ignore_index,
             )
         else:
             raise ValueError(f"Wrong mode {self.mode}.")

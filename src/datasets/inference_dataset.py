@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from pathlib import Path
 from typing import Dict, Optional
 
@@ -8,19 +10,20 @@ from torch.utils.data import Dataset
 
 from src.augmentation import Augmentation_pipeline
 from src.data.utils import read_tiff_rasterio
-from src.datasets.base import Segmentation_Dataset
+from src.datasets.base import SegmentationDataset
 
 
-class Dataset_Inference_Siamese(Segmentation_Dataset):
-    """
-    Siamese dataset class for inference on pre- and post-disaster GeoTIFF tiles.
+class DatasetInferenceSiamese(SegmentationDataset):
+    """Siamese dataset class for inference on pre- and post-disaster GeoTIFF tiles.
 
     Args:
+    ----
         origin_dir (str): Root directory containing both image subdirectories.
         pre_disaster_dir (str): Subdirectory name for pre-disaster image tiles.
-        post_disaster_dir (Optional[str]): Subdirectory name for post-disaster image tiles. If None, post-disaster tiles are replaced with zeros.
-        transform (Optional[Augmentation_pipeline]): Transformation pipeline to apply to both images.
+        post_disaster_dir (str | None): Subdirectory name for post-disaster image tiles. If None, post-disaster tiles are replaced with zeros.
+        transform (Augmentation_pipeline | None): Transformation pipeline to apply to both images.
         extension (str): Image file extension (default: 'tif').
+        n_classes: (int): Number of classes (default: None)
 
     Expected folder structure:
         origin_dir/
@@ -28,22 +31,38 @@ class Dataset_Inference_Siamese(Segmentation_Dataset):
             └── post_disaster_dir/
 
     Returns:
+    -------
         dict:
             "pre_image" (torch.Tensor): Pre-disaster image tensor (C x H x W).
             "post_image" (torch.Tensor): Post-disaster image tensor (C x H x W).
             "filename" (str): Filename without extension.
             "profile" (dict): Rasterio metadata profile.
+
     """
 
     def __init__(
         self,
         origin_dir: str,
         pre_disaster_dir: str,
-        post_disaster_dir: Optional[str] = None,
-        transform: Optional[Augmentation_pipeline] = None,
+        post_disaster_dir: str | None = None,
+        transform: Augmentation_pipeline | None = None,
+        n_classes: int = None,
         extension: str = "tif",
-    ):
-        super().__init__(origin_dir=origin_dir, type="infer", transform=transform)
+    ) -> None:
+        """Define Siamese dataset class for inference on pre- and post-disaster GeoTIFF tiles.
+
+        Args:
+            origin_dir (str): Root directory containing both image subdirectories.
+            pre_disaster_dir (str): Subdirectory name for pre-disaster image tiles.
+            post_disaster_dir (str | None): Subdirectory name for post-disaster image tiles. If None, post-disaster tiles are replaced with zeros.
+            transform (Augmentation_pipeline | None): Transformation pipeline to apply to both images.
+            extension (str): Image file extension (default: 'tif').
+            n_classes: (int): Number of classes (default: None)
+
+        """
+        super().__init__(
+            origin_dir=origin_dir, type="infer", transform=transform, n_classes=n_classes
+        )
         self.extension = extension.lower()
         self.pre_disaster_dir = self.origin_dir / pre_disaster_dir
         self.post_disaster_dir = self.origin_dir / post_disaster_dir if post_disaster_dir else None
@@ -58,9 +77,18 @@ class Dataset_Inference_Siamese(Segmentation_Dataset):
         return sorted(pre_files)
 
     def __len__(self) -> int:
+        """Return dataset length."""
         return len(self.image_filenames)
 
-    def __getitem__(self, index: int):
+    def __getitem__(self, index: int) -> dict:
+        """Return an item from the Dataset.
+
+        Returns:
+            pre_image (torch.Tensor): Pre-disaster image.
+            post_image (torch.Tensor): Post-disaster image.
+            filename (str): filename.
+            profile: (dict): image metadata.
+        """
         filename = self.image_filenames[index]
 
         # Load pre-disaster image
@@ -93,44 +121,68 @@ class Dataset_Inference_Siamese(Segmentation_Dataset):
         }
 
 
-class Dataset_Inference(Segmentation_Dataset):
-    """
-    Dataset class for inference on segmented GeoTIFF tiles generated from large images.
+class DatasetInference(SegmentationDataset):
+    """Dataset class for inference on segmented GeoTIFF tiles generated from large images.
 
     Args:
+    ----
         origin_dir (str): Directory containing the input image tiles.
-        transform (Optional[Augmentation_pipeline]): Transformation pipeline to apply to the images.
+        transform (Augmentation_pipeline | None): Transformation pipeline to apply to the images.
         extension (str): File extension of the image tiles (default: 'tif').
+        n_classes: (int): Number of classes (default: None)
 
     Expected folder structure:
         origin_dir/
             └── *.tif
 
     Returns:
+    -------
         dict:
             "image" (torch.Tensor): Transformed image tensor (C x H x W).
             "filename" (str): Filename (without extension).
             "profile" (dict): Rasterio profile metadata.
+
     """
 
     def __init__(
         self,
         origin_dir: str,
-        transform: Optional[Augmentation_pipeline] = None,
+        transform: Augmentation_pipeline | None = None,
         extension: str = "tif",
-    ):
-        super().__init__(origin_dir=origin_dir, type="infer", transform=transform)
+        n_classes: int | None = None,
+    ) -> None:
+        """Initialize a dataset class object for inference on segmented GeoTIFF tiles generated from large GeoTIFF images.
+
+        Args:
+        ----
+            origin_dir (str): Directory containing the input image tiles.
+            transform (Augmentation_pipeline | None): Transformation pipeline to apply to the images.
+            extension (str): File extension of the image tiles (default: 'tif').
+            n_classes: (int): Number of classes (default: None)
+
+        """
+        super().__init__(
+            origin_dir=origin_dir, type="infer", transform=transform, n_classes=n_classes
+        )
         self.extension = extension.lower()
         self.image_dir = Path(self.origin_dir)
         self.image_filenames = self._filter_filenames()
 
-    def _filter_filenames(self):
+    def _filter_filenames(self) -> list[str]:
         return sorted([f.stem for f in self.image_dir.glob(f"*.{self.extension}")])
 
     def __len__(self) -> int:
+        """Return dataset length."""
         return len(self.image_filenames)
 
-    def __getitem__(self, index: int):
+    def __getitem__(self, index: int) -> dict:
+        """Return an item from the Dataset.
+
+        Returns:
+            image (torch.Tensor): image sample.
+            filename (str): filename.
+            profile: (dict): image metadata.
+        """
         filename = self.image_filenames[index]
         path = self.image_dir / f"{filename}.{self.extension}"
 

@@ -1,16 +1,11 @@
 # Utils files for Dataset definitions
 from pathlib import Path
 
+import numpy as np
 import torch
 from PIL import Image
 from tqdm import tqdm
-
-__all__ = [
-    "custom_collate_fn",
-    "IMG_EXTENSIONS",
-    "is_image_file",
-    "split_and_save_images",
-]
+from typing import Literal
 
 IMG_EXTENSIONS = [
     ".jpg",
@@ -29,15 +24,18 @@ IMG_EXTENSIONS = [
 
 
 def custom_collate_fn(batch):
-    """
-    Custom collate function to handle variable-sized targets in a batch.
+    """Custom collate function to handle variable-sized targets in a batch.
+
     Required for Instance Segmentation Dataloader
 
-    Parameters:
+    Parameters
+    ----------
         batch (list): List of (image, target) tuples.
 
     Returns:
+    -------
         Tuple: (images, targets)
+
     """
     images = []
     targets = []
@@ -58,62 +56,51 @@ def is_image_file(filepath):
     return filepath.suffix.lower() in IMG_EXTENSIONS
 
 
-def split_and_save_images(
-    input_dir: str,
-    output_dir: str,
-    patch_size: int = 256,
-    images_folder_names: list[str] = ["A", "B"],
-    label_folder_name: list[str] = "label",
-):
-    """
-    Splits all images in the input directory into non-overlapping patches and saves them to the output directory.
+def train_val_test_split(list_labels: list, val_size: float, test_size: float, type: str) -> list:
+    """Splits a list of labels into training, validation, and test sets based on specified proportions.
 
     Args:
-        input_dir (str): Path to the root directory containing 'A', 'B', and 'label' folders.
-        output_dir (str): Path to the directory where patches will be saved.
-        patch_size (int): Size of the patches (default: 256).
-        image_format (str): Format to save patches, e.g., 'png' or 'jpg'.
-        folder_names (list): List of folder names to process (default: ['A', 'B', 'label']).
+    ----
+        list_labels (list): List of labels to be split.
+        val_size (float): Proportion of the dataset to allocate for validation (e.g., 0.2 for 20%).
+        test_size (float): Proportion of the dataset to allocate for testing (e.g., 0.1 for 10%).
+        type (str): Specifies which subset to return ('train', 'val', or 'test').
+
+    Raises:
+    ------
+        ValueError: If the `type` argument is not one of 'train', 'val', or 'test'.
+
+    Returns:
+    -------
+        list: A subset of labels corresponding to the specified `type`.
+
+    Example:
+    -------
+        >>> labels = ["label1", "label2", "label3", "label4", "label5"]
+        >>> train_labels = train_val_test_split(labels, val_size=0.2, test_size=0.2, type="train")
+        >>> print(train_labels)
+        ['label1', 'label2', 'label3']
+
     """
-    input_dir = Path(input_dir)
-    output_dir = Path(output_dir)
-    folder_names = images_folder_names + [label_folder_name]
-    image_counter = 0
-    crop_counter = 0
+    total_size = len(list_labels)
+    test_size = int(total_size * test_size)
+    val_size = int(total_size * val_size)
+    train_size = total_size - test_size - val_size
 
-    # Create output directories for patches
-    for folder in folder_names:
-        (output_dir / folder).mkdir(parents=True, exist_ok=True)
+    indices = np.random.permutation(total_size)
 
-    for folder in folder_names:
-        input_folder = input_dir / folder
-        output_folder = output_dir / folder
+    train_indices = indices[:train_size]
+    val_indices = indices[train_size : train_size + val_size]
+    test_indices = indices[train_size + val_size :]
 
-        # Process each image in the folder
-        for img_path in tqdm(input_folder.glob("*.*")):
-            if is_image_file(img_path):
-                image_counter += 1
-                img = Image.open(img_path)
-                img = img.convert("RGB") if folder != label_folder_name else img.convert("L")
+    if type == "train":
+        list_labels = [list_labels[i] for i in train_indices]
+    elif type == "val":
+        list_labels = [list_labels[i] for i in val_indices]
+    elif type == "test":
+        list_labels = [list_labels[i] for i in test_indices]
+    else:
+        raise ValueError("Unknown dataset type. Use 'train', 'val', or 'test'.")
 
-                img_name = img_path.stem  # Get the image name without extension
-                img_ext = img_path.suffix
-                width, height = img.size
-
-                # Split into patches
-                for y in range(0, height, patch_size):
-                    for x in range(0, width, patch_size):
-                        patch = img.crop((x, y, x + patch_size, y + patch_size))
-
-                        # Ensure patches are exactly patch_size x patch_size
-                        if patch.size != (patch_size, patch_size):
-                            continue
-
-                        # Save patch
-                        patch_filename = f"{img_name}_{y}_{x}.{img_ext}"
-                        patch.save(output_folder / patch_filename)
-                        crop_counter += 1
-
-    print(
-        f"{image_counter} images ({width}, {height}) have been created into {crop_counter} patches of size ({patch_size}, {patch_size}) and saved at {output_dir}"
-    )
+    print(f"Loaded {len(list_labels)} {type} labels.")
+    return list_labels

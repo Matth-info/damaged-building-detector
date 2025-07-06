@@ -14,17 +14,18 @@ class DiceLoss(_Loss):
     def __init__(
         self,
         mode: str,
-        classes: Optional[List[int]] = None,
+        classes: list[int | None] = None,
         log_loss: bool = False,
         from_logits: bool = True,
         smooth: float = 0.0,
-        ignore_index: Optional[int] = None,
+        ignore_index: int | None = None,
         eps: float = 1e-7,
     ):
         """Dice loss for image segmentation task.
-        It supports binary, multiclass and multilabel cases
+        It supports binary, multiclass and multilabel cases.
 
         Args:
+        ----
             mode: Loss mode 'binary', 'multiclass' or 'multilabel'
             classes:  List of classes that contribute in loss computation. By default, all channels are included.
             log_loss: If True, loss computed as `- log(dice_coeff)`, otherwise `1 - dice_coeff`
@@ -34,12 +35,13 @@ class DiceLoss(_Loss):
             eps: A small epsilon for numerical stability to avoid zero division error
                 (denominator will be always greater or equal to eps)
 
-        Shape
+        Shape:
              - **y_pred** - torch.Tensor of shape (N, C, H, W)
              - **y_true** - torch.Tensor of shape (N, H, W) or (N, C, H, W)
 
-        Reference
+        Reference:
             https://github.com/BloodAxe/pytorch-toolbelt
+
         """
         assert mode in {BINARY_MODE, MULTILABEL_MODE, MULTICLASS_MODE}
         super().__init__()
@@ -89,7 +91,8 @@ class DiceLoss(_Loss):
                 y_pred = y_pred * mask.unsqueeze(1)
 
                 y_true = F.one_hot(
-                    (y_true * mask).to(torch.long), num_classes
+                    (y_true * mask).to(torch.long),
+                    num_classes,
                 )  # N,H*W -> N,H*W, C
                 y_true = y_true.permute(0, 2, 1) * mask.unsqueeze(1)  # N, C, H*W
             else:
@@ -106,13 +109,14 @@ class DiceLoss(_Loss):
                 y_true = y_true * mask
 
         scores = self.compute_score(
-            y_pred, y_true.type_as(y_pred), smooth=self.smooth, eps=self.eps, dims=dims
+            y_pred,
+            y_true.type_as(y_pred),
+            smooth=self.smooth,
+            eps=self.eps,
+            dims=dims,
         )
 
-        if self.log_loss:
-            loss = -torch.log(scores.clamp_min(self.eps))
-        else:
-            loss = 1.0 - scores
+        loss = -torch.log(scores.clamp_min(self.eps)) if self.log_loss else 1.0 - scores
 
         # Dice loss is undefined for non-empty classes
         # So we zero contribution of channel that does not have true pixels
